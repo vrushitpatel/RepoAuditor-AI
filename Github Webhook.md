@@ -511,15 +511,306 @@ If issues persist:
    - Regularly check GitHub's delivery logs
    - Set up alerts for failed deliveries
 
+## Using the GitHub API Client
+
+RepoAuditor AI includes a comprehensive GitHub API client wrapper with authentication, rate limiting, and error handling.
+
+### Basic Usage
+
+```python
+from app.integrations.github_client import GitHubClient
+
+# Create client instance
+client = GitHubClient()
+
+# Get PR details
+pr_details = client.get_pr_details(
+    repo_name="owner/repo",
+    pr_number=123,
+    installation_id=456
+)
+print(f"PR Title: {pr_details['title']}")
+print(f"Changed files: {pr_details['changed_files']}")
+
+# Get PR diff
+diff = client.get_pr_diff(
+    repo_name="owner/repo",
+    pr_number=123,
+    installation_id=456
+)
+
+# Post a comment
+client.post_pr_comment(
+    repo_name="owner/repo",
+    pr_number=123,
+    body="LGTM! :+1:",
+    installation_id=456
+)
+
+# Add reaction to comment
+client.add_reaction(
+    repo_name="owner/repo",
+    comment_id=98765,
+    reaction="+1",
+    installation_id=456
+)
+
+# Get file contents
+content = client.get_file_contents(
+    repo_name="owner/repo",
+    path="src/main.py",
+    ref="main",
+    installation_id=456
+)
+
+# Update commit status
+client.update_commit_status(
+    repo_name="owner/repo",
+    sha="abc123def",
+    state="success",
+    description="Code review completed!",
+    installation_id=456,
+    target_url="https://example.com/review/123"
+)
+```
+
+### Features
+
+- **Automatic token management**: Tokens are cached and automatically refreshed when expired
+- **Rate limiting**: Exponential backoff retry on rate limits (3 attempts max)
+- **Error handling**: Comprehensive logging and exception handling
+- **Easy to mock**: Perfect for unit testing
+
+### Authentication
+
+The client uses GitHub App authentication with JWT tokens:
+
+```python
+from app.integrations.github_auth import GitHubAuth
+
+# Authentication is handled automatically by GitHubClient
+# But you can use it directly if needed:
+auth = GitHubAuth()
+
+# Generate JWT for app authentication
+jwt_token = auth.generate_jwt()
+
+# Get installation access token
+token = auth.get_installation_token(installation_id=456)
+
+# Check if token is valid
+is_valid = auth.is_token_valid(installation_id=456)
+
+# Force token refresh
+auth.invalidate_token(installation_id=456)
+token = auth.get_installation_token(installation_id=456)
+```
+
+### Rate Limiting
+
+All API methods include automatic retry with exponential backoff:
+
+- **Max attempts**: 3
+- **Initial delay**: 1 second
+- **Backoff multiplier**: 2.0
+
+If a request fails due to rate limiting, it will automatically retry with increasing delays.
+
+### Error Handling
+
+The client raises `GithubException` for API errors:
+
+```python
+from github import GithubException
+
+try:
+    pr_details = client.get_pr_details("owner/repo", 999999, installation_id=456)
+except GithubException as e:
+    print(f"API error: {e}")
+    # Handle error appropriately
+```
+
+## Using the Gemini API Client
+
+RepoAuditor AI includes a powerful Gemini API client for AI-powered code analysis with structured responses and cost tracking.
+
+### Basic Usage
+
+```python
+from app.integrations.gemini_client import GeminiClient
+from app.models.review_findings import ModelConfig
+
+# Initialize with default Flash model (fast, cost-effective)
+client = GeminiClient(use_flash=True)
+
+# Or initialize with Pro model (more capable)
+client = GeminiClient(use_flash=False)
+
+# Analyze code for security issues
+analysis = await client.analyze_code(code_diff, "security")
+
+# Check findings
+for finding in analysis.findings:
+    if finding.severity in ["CRITICAL", "HIGH"]:
+        print(f"{finding.severity}: {finding.title}")
+        print(f"Location: {finding.location.file_path}:{finding.location.line_start}")
+        print(f"Fix: {finding.recommendation}")
+
+# Generate code explanation
+explanation = await client.generate_explanation(
+    code_snippet="def factorial(n): return 1 if n <= 1 else n * factorial(n-1)",
+    context="Recursive function for calculating factorial"
+)
+print(explanation.explanation)
+print(f"Complexity: {explanation.complexity}")
+
+# Suggest fix for an issue
+fix = await client.suggest_fix(
+    issue_description="SQL injection vulnerability",
+    code_context='query = f"SELECT * FROM users WHERE id = {user_id}"'
+)
+print(f"Fixed code:\\n{fix.fixed_code}")
+print(f"Explanation: {fix.explanation}")
+```
+
+### Analysis Types
+
+The client supports multiple analysis types:
+
+1. **security**: Focus on vulnerabilities (SQL injection, XSS, secrets, etc.)
+2. **performance**: Find performance bottlenecks (N+1 queries, inefficient algorithms)
+3. **best_practices**: Check code style, naming, error handling
+4. **bugs**: Detect logic errors, null checks, edge cases
+5. **general**: Comprehensive review covering all areas
+
+```python
+# Run security scan
+security_analysis = await client.analyze_code(diff, "security")
+
+# Check performance issues
+perf_analysis = await client.analyze_code(diff, "performance")
+
+# Review best practices
+style_analysis = await client.analyze_code(diff, "best_practices")
+```
+
+### Model Switching
+
+Switch between Flash (fast, cheap) and Pro (capable, expensive) models:
+
+```python
+# Start with Flash for initial analysis
+client = GeminiClient(use_flash=True)
+initial_analysis = await client.analyze_code(diff, "general")
+
+# Switch to Pro for detailed security analysis
+client.switch_model(use_flash=False)
+detailed_analysis = await client.analyze_code(diff, "security")
+
+# Switch back to Flash
+client.switch_model(use_flash=True)
+```
+
+### Cost Tracking
+
+Monitor token usage and costs:
+
+```python
+client = GeminiClient()
+
+# Perform analyses
+await client.analyze_code(diff1, "security")
+await client.analyze_code(diff2, "performance")
+
+# Check usage stats
+stats = client.get_usage_stats()
+print(f"Total tokens: {stats['total_tokens']}")
+print(f"Input tokens: {stats['input_tokens']}")
+print(f"Output tokens: {stats['output_tokens']}")
+print(f"Total cost: ${stats['total_cost_usd']:.4f}")
+print(f"Model: {stats['model']}")
+
+# Reset stats for new batch
+client.reset_usage_stats()
+```
+
+### Streaming Support
+
+For real-time feedback (future use):
+
+```python
+# Stream analysis results as they arrive
+async for chunk in client.analyze_code_stream(diff, "security"):
+    print(chunk, end="", flush=True)
+```
+
+### Custom Model Configuration
+
+Use custom model configurations:
+
+```python
+from app.models.review_findings import ModelConfig
+
+# Create custom config
+config = ModelConfig(
+    model_name="gemini-2.0-flash-exp",
+    temperature=0.1,  # Lower temperature for more deterministic output
+    max_output_tokens=4096,
+    input_cost_per_million=0.075,
+    output_cost_per_million=0.30
+)
+
+client = GeminiClient(model_config=config)
+```
+
+### Structured Findings
+
+The client returns structured findings with detailed information:
+
+```python
+analysis = await client.analyze_code(diff, "security")
+
+for finding in analysis.findings:
+    print(f"Severity: {finding.severity}")  # CRITICAL, HIGH, MEDIUM, LOW, INFO
+    print(f"Type: {finding.type}")  # security, bug, performance, etc.
+    print(f"Title: {finding.title}")
+    print(f"Description: {finding.description}")
+
+    if finding.location:
+        print(f"File: {finding.location.file_path}")
+        print(f"Lines: {finding.location.line_start}-{finding.location.line_end}")
+        print(f"Code: {finding.location.code_snippet}")
+
+    print(f"Recommendation: {finding.recommendation}")
+    print(f"Example fix: {finding.example_fix}")
+    print(f"References: {finding.references}")
+
+print(f"\\nSummary: {analysis.summary}")
+print(f"Total issues: {analysis.total_issues}")
+print(f"Critical: {analysis.critical_count}")
+print(f"High: {analysis.high_count}")
+print(f"Cost: ${analysis.cost_usd:.4f}")
+```
+
+### Model Comparison
+
+| Model | Speed | Cost | Best For |
+|-------|-------|------|----------|
+| **gemini-2.0-flash-exp** | Very Fast | $0.075/$0.30 per M tokens | General reviews, quick scans |
+| **gemini-1.5-pro-latest** | Slower | $1.25/$5.00 per M tokens | Complex analysis, security audits |
+| **gemini-2.0-pro-exp** | Slower | $1.25/$5.00 per M tokens | Latest features, experimental |
+
 ## Next Steps
 
 After successfully setting up webhooks:
 
 1. **Customize review logic**: Modify `app/agents/code_reviewer.py`
 2. **Implement command handlers**: Enhance command processing in `app/webhooks/github.py`
-3. **Add custom workflows**: Create new workflows in `app/workflows/`
-4. **Set up monitoring**: Implement comprehensive logging and metrics
-5. **Deploy to production**: Use Docker, cloud hosting, or Kubernetes
+3. **Use GitHub API client**: Integrate the client methods in your workflows
+4. **Use Gemini API client**: Leverage AI-powered analysis in your reviews
+5. **Add custom workflows**: Create new workflows in `app/workflows/`
+6. **Set up monitoring**: Implement comprehensive logging and metrics
+7. **Deploy to production**: Use Docker, cloud hosting, or Kubernetes
 
 ---
 
@@ -527,3 +818,4 @@ For more information, see:
 - [Setup Guide.md](Setup%20Guide.md) - Full application setup
 - [README.md](README.md) - Project overview
 - [FEATURES.md](FEATURES.md) - Feature list
+- [TROUBLESHOOTING_WEBHOOK_ERRORS.md](TROUBLESHOOTING_WEBHOOK_ERRORS.md) - Webhook troubleshooting

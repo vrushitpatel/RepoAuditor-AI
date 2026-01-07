@@ -3,11 +3,17 @@
 import time
 from typing import Any, Dict, List, Optional
 
-import jwt
 import requests
-from github import Github, GithubIntegration, PullRequest as GHPullRequest
+from github import Github, GithubException, PullRequest as GHPullRequest
+from github.Commit import Commit
+from github.CommitStatus import CommitStatus
+from github.Issue import Issue
+from github.IssueComment import IssueComment
+from github.PullRequestComment import PullRequestComment
+from github.Reaction import Reaction
 
 from app.config import settings
+from app.integrations.github_auth import GitHubAuth
 from app.models.webhook_events import FileChange, ReviewComment
 from app.utils.logger import setup_logger
 from app.utils.retry import retry
@@ -16,36 +22,526 @@ logger = setup_logger(__name__)
 
 
 class GitHubClient:
-    """Client for GitHub API operations."""
+    """
+    GitHub API client wrapper with authentication, rate limiting, and error handling.
 
-    def __init__(self) -> None:
-        """Initialize GitHub client with App credentials."""
-        self.app_id = settings.github_app_id
-        self.private_key = settings.github_private_key
-        self._integration: Optional[GithubIntegration] = None
+    This client provides easy-to-use methods for interacting with GitHub API:
+    - Automatic token management and refresh
+    - Exponential backoff retry on rate limits
+    - Comprehensive error handling and logging
+    - Easy to mock for testing
 
-    def _get_integration(self) -> GithubIntegration:
-        """Get or create GitHub integration instance."""
-        if self._integration is None:
-            self._integration = GithubIntegration(
-                self.app_id,
-                self.private_key,
-            )
-        return self._integration
+    Example:
+        ```python
+        client = GitHubClient()
+
+        # Get PR details
+        pr = await client.get_pr_details("owner/repo", 123, installation_id=456)
+
+        # Get PR diff
+        diff = await client.get_pr_diff("owner/repo", 123, installation_id=456)
+
+        # Post comment
+        await client.post_pr_comment("owner/repo", 123, "LGTM!", installation_id=456)
+        ```
+    """
+
+    def __init__(self, auth: Optional[GitHubAuth] = None) -> None:
+        """
+        Initialize GitHub client with authentication.
+
+        Args:
+            auth: Optional GitHubAuth instance (creates new if not provided)
+        """
+        self.auth = auth or GitHubAuth()
+        self._clients: Dict[int, Github] = {}  # Cache Github instances
 
     def _get_installation_client(self, installation_id: int) -> Github:
         """
         Get authenticated GitHub client for an installation.
 
+        Caches clients per installation for better performance.
+
         Args:
             installation_id: GitHub App installation ID
 
         Returns:
-            Authenticated GitHub client
+            Authenticated GitHub client instance
+
+        Note:
+            Automatically handles token refresh if expired.
         """
-        integration = self._get_integration()
-        access_token = integration.get_access_token(installation_id).token
-        return Github(access_token)
+        # Check if we have a valid cached client
+        if installation_id in self._clients:
+            # Verify token is still valid
+            if self.auth.is_token_valid(installation_id):
+                return self._clients[installation_id]
+            else:
+                # Token expired, remove cached client
+                del self._clients[installation_id]
+
+        # Get new token and create client
+        access_token = self.auth.get_installation_token(installation_id)
+        client = Github(access_token)
+        self._clients[installation_id] = client
+
+        logger.debug(
+            f"Created GitHub client for installation {installation_id}",
+            extra={"extra_fields": {"installation_id": installation_id}},
+        )
+
+        return client
+
+    @retry(max_attempts=3, delay=1.0, backoff=2.0)
+    def get_pr_details(
+        self,
+        repo_name: str,
+        pr_number: int,
+        installation_id: int,
+    ) -> Dict[str, Any]:
+        """
+        Get detailed information about a pull request.
+
+        Args:
+            repo_name: Repository name in format "owner/repo"
+            pr_number: Pull request number
+            installation_id: GitHub App installation ID
+
+        Returns:
+            Dictionary with PR details including:
+            - number, title, body, state
+            - author, created_at, updated_at
+            - head_ref, base_ref, head_sha, base_sha
+            - additions, deletions, changed_files, commits
+            - mergeable, merged, draft
+            - html_url, diff_url, patch_url
+
+        Example:
+            ```python
+            client = GitHubClient()
+            pr_details = client.get_pr_details("owner/repo", 123, installation_id=456)
+            print(f"PR Title: {pr_details['title']}")
+            print(f"Changed files: {pr_details['changed_files']}")
+            ```
+
+        Raises:
+            GithubException: If PR not found or API error occurs
+        """
+        try:
+            client = self._get_installation_client(installation_id)
+            repo = client.get_repo(repo_name)
+            pr = repo.get_pull(pr_number)
+
+            details = {
+                "number": pr.number,
+                "title": pr.title,
+                "body": pr.body or "",
+                "state": pr.state,
+                "author": pr.user.login,
+                "created_at": pr.created_at.isoformat(),
+                "updated_at": pr.updated_at.isoformat(),
+                "head_ref": pr.head.ref,
+                "base_ref": pr.base.ref,
+                "head_sha": pr.head.sha,
+                "base_sha": pr.base.sha,
+                "additions": pr.additions,
+                "deletions": pr.deletions,
+                "changed_files": pr.changed_files,
+                "commits": pr.commits,
+                "mergeable": pr.mergeable,
+                "merged": pr.merged,
+                "draft": pr.draft,
+                "html_url": pr.html_url,
+                "diff_url": pr.diff_url,
+                "patch_url": pr.patch_url,
+            }
+
+            logger.info(
+                f"Retrieved PR details for {repo_name}#{pr_number}",
+                extra={
+                    "extra_fields": {
+                        "repo": repo_name,
+                        "pr_number": pr_number,
+                        "changed_files": details["changed_files"],
+                    }
+                },
+            )
+
+            return details
+
+        except GithubException as e:
+            logger.error(
+                f"Failed to get PR details for {repo_name}#{pr_number}: {e}",
+                exc_info=True,
+            )
+            raise
+
+    @retry(max_attempts=3, delay=1.0, backoff=2.0)
+    def get_pr_diff(
+        self,
+        repo_name: str,
+        pr_number: int,
+        installation_id: int,
+    ) -> str:
+        """
+        Get the unified diff for a pull request.
+
+        Args:
+            repo_name: Repository name in format "owner/repo"
+            pr_number: Pull request number
+            installation_id: GitHub App installation ID
+
+        Returns:
+            Unified diff as string
+
+        Example:
+            ```python
+            client = GitHubClient()
+            diff = client.get_pr_diff("owner/repo", 123, installation_id=456)
+            print(diff)  # Shows full diff with +/- lines
+            ```
+
+        Raises:
+            GithubException: If PR not found or API error occurs
+            requests.RequestException: If HTTP request fails
+        """
+        try:
+            client = self._get_installation_client(installation_id)
+            repo = client.get_repo(repo_name)
+            pr = repo.get_pull(pr_number)
+
+            # Get diff URL and fetch it
+            diff_url = pr.diff_url
+            token = self.auth.get_installation_token(installation_id)
+
+            response = requests.get(
+                diff_url,
+                headers={
+                    "Authorization": f"token {token}",
+                    "Accept": "application/vnd.github.v3.diff",
+                },
+                timeout=30,
+            )
+            response.raise_for_status()
+
+            diff_content = response.text
+
+            logger.info(
+                f"Retrieved diff for {repo_name}#{pr_number} ({len(diff_content)} chars)",
+                extra={
+                    "extra_fields": {
+                        "repo": repo_name,
+                        "pr_number": pr_number,
+                        "diff_size": len(diff_content),
+                    }
+                },
+            )
+
+            return diff_content
+
+        except (GithubException, requests.RequestException) as e:
+            logger.error(
+                f"Failed to get PR diff for {repo_name}#{pr_number}: {e}",
+                exc_info=True,
+            )
+            raise
+
+    @retry(max_attempts=3, delay=1.0, backoff=2.0)
+    def post_pr_comment(
+        self,
+        repo_name: str,
+        pr_number: int,
+        body: str,
+        installation_id: int,
+    ) -> IssueComment:
+        """
+        Post a comment on a pull request.
+
+        Args:
+            repo_name: Repository name in format "owner/repo"
+            pr_number: Pull request number
+            body: Comment body (Markdown supported)
+            installation_id: GitHub App installation ID
+
+        Returns:
+            Created comment object
+
+        Example:
+            ```python
+            client = GitHubClient()
+            comment = client.post_pr_comment(
+                "owner/repo",
+                123,
+                "LGTM! :+1:",
+                installation_id=456
+            )
+            print(f"Comment posted: {comment.html_url}")
+            ```
+
+        Raises:
+            GithubException: If PR not found or API error occurs
+        """
+        try:
+            client = self._get_installation_client(installation_id)
+            repo = client.get_repo(repo_name)
+            pr = repo.get_pull(pr_number)
+
+            comment = pr.create_issue_comment(body)
+
+            logger.info(
+                f"Posted comment on {repo_name}#{pr_number}",
+                extra={
+                    "extra_fields": {
+                        "repo": repo_name,
+                        "pr_number": pr_number,
+                        "comment_id": comment.id,
+                        "body_length": len(body),
+                    }
+                },
+            )
+
+            return comment
+
+        except GithubException as e:
+            logger.error(
+                f"Failed to post comment on {repo_name}#{pr_number}: {e}",
+                exc_info=True,
+            )
+            raise
+
+    @retry(max_attempts=3, delay=1.0, backoff=2.0)
+    def add_reaction(
+        self,
+        repo_name: str,
+        comment_id: int,
+        reaction: str,
+        installation_id: int,
+    ) -> Reaction:
+        """
+        Add a reaction to a comment.
+
+        Args:
+            repo_name: Repository name in format "owner/repo"
+            comment_id: Comment ID
+            reaction: Reaction type ('+1', '-1', 'laugh', 'confused', 'heart',
+                                    'hooray', 'rocket', 'eyes')
+            installation_id: GitHub App installation ID
+
+        Returns:
+            Created reaction object
+
+        Example:
+            ```python
+            client = GitHubClient()
+            reaction = client.add_reaction(
+                "owner/repo",
+                comment_id=98765,
+                reaction="+1",
+                installation_id=456
+            )
+            ```
+
+        Raises:
+            GithubException: If comment not found or API error occurs
+            ValueError: If reaction type is invalid
+        """
+        valid_reactions = {"+1", "-1", "laugh", "confused", "heart", "hooray", "rocket", "eyes"}
+        if reaction not in valid_reactions:
+            raise ValueError(
+                f"Invalid reaction: {reaction}. Must be one of: {', '.join(valid_reactions)}"
+            )
+
+        try:
+            client = self._get_installation_client(installation_id)
+            repo = client.get_repo(repo_name)
+
+            # Get the issue (comments are on issues, PRs are issues)
+            issue = repo.get_issue(comment_id)
+            comment = issue.get_comment(comment_id)
+
+            reaction_obj = comment.create_reaction(reaction)
+
+            logger.info(
+                f"Added reaction '{reaction}' to comment {comment_id} in {repo_name}",
+                extra={
+                    "extra_fields": {
+                        "repo": repo_name,
+                        "comment_id": comment_id,
+                        "reaction": reaction,
+                    }
+                },
+            )
+
+            return reaction_obj
+
+        except GithubException as e:
+            logger.error(
+                f"Failed to add reaction to comment {comment_id}: {e}",
+                exc_info=True,
+            )
+            raise
+
+    @retry(max_attempts=3, delay=1.0, backoff=2.0)
+    def get_file_contents(
+        self,
+        repo_name: str,
+        path: str,
+        ref: str,
+        installation_id: int,
+    ) -> str:
+        """
+        Get contents of a file from repository.
+
+        Args:
+            repo_name: Repository name in format "owner/repo"
+            path: Path to file in repository
+            ref: Git reference (branch, tag, or commit SHA)
+            installation_id: GitHub App installation ID
+
+        Returns:
+            File contents as string
+
+        Example:
+            ```python
+            client = GitHubClient()
+            content = client.get_file_contents(
+                "owner/repo",
+                "src/main.py",
+                ref="main",
+                installation_id=456
+            )
+            print(content)
+            ```
+
+        Raises:
+            GithubException: If file not found or API error occurs
+            ValueError: If path points to directory, not a file
+        """
+        try:
+            client = self._get_installation_client(installation_id)
+            repo = client.get_repo(repo_name)
+            content_file = repo.get_contents(path, ref=ref)
+
+            if isinstance(content_file, list):
+                raise ValueError(f"{path} is a directory, not a file")
+
+            file_content = content_file.decoded_content.decode("utf-8")
+
+            logger.info(
+                f"Retrieved file contents: {repo_name}:{path}@{ref}",
+                extra={
+                    "extra_fields": {
+                        "repo": repo_name,
+                        "path": path,
+                        "ref": ref,
+                        "size": len(file_content),
+                    }
+                },
+            )
+
+            return file_content
+
+        except GithubException as e:
+            logger.error(
+                f"Failed to get file contents for {repo_name}:{path}@{ref}: {e}",
+                exc_info=True,
+            )
+            raise
+
+    @retry(max_attempts=3, delay=1.0, backoff=2.0)
+    def update_commit_status(
+        self,
+        repo_name: str,
+        sha: str,
+        state: str,
+        description: str,
+        installation_id: int,
+        context: str = "RepoAuditor AI",
+        target_url: Optional[str] = None,
+    ) -> CommitStatus:
+        """
+        Update commit status (check run).
+
+        Args:
+            repo_name: Repository name in format "owner/repo"
+            sha: Commit SHA
+            state: Status state ('pending', 'success', 'error', 'failure')
+            description: Short description of the status
+            installation_id: GitHub App installation ID
+            context: Status context label (default: "RepoAuditor AI")
+            target_url: Optional URL with more details
+
+        Returns:
+            Created commit status object
+
+        Example:
+            ```python
+            client = GitHubClient()
+
+            # Set pending status
+            client.update_commit_status(
+                "owner/repo",
+                sha="abc123",
+                state="pending",
+                description="Code review in progress...",
+                installation_id=456
+            )
+
+            # Set success status
+            client.update_commit_status(
+                "owner/repo",
+                sha="abc123",
+                state="success",
+                description="Code review completed!",
+                installation_id=456,
+                target_url="https://example.com/review/123"
+            )
+            ```
+
+        Raises:
+            GithubException: If commit not found or API error occurs
+            ValueError: If state is invalid
+        """
+        valid_states = {"pending", "success", "error", "failure"}
+        if state not in valid_states:
+            raise ValueError(
+                f"Invalid state: {state}. Must be one of: {', '.join(valid_states)}"
+            )
+
+        try:
+            client = self._get_installation_client(installation_id)
+            repo = client.get_repo(repo_name)
+            commit = repo.get_commit(sha)
+
+            status = commit.create_status(
+                state=state,
+                description=description,
+                context=context,
+                target_url=target_url,
+            )
+
+            logger.info(
+                f"Updated commit status for {repo_name}@{sha[:7]}: {state}",
+                extra={
+                    "extra_fields": {
+                        "repo": repo_name,
+                        "sha": sha,
+                        "state": state,
+                        "context": context,
+                    }
+                },
+            )
+
+            return status
+
+        except GithubException as e:
+            logger.error(
+                f"Failed to update commit status for {repo_name}@{sha}: {e}",
+                exc_info=True,
+            )
+            raise
+
+    # Legacy methods (keeping for backward compatibility)
 
     @retry(max_attempts=3, delay=1.0)
     def get_pull_request(

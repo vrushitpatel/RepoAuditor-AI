@@ -20,6 +20,45 @@
 - **Command Support**: Recognizes slash commands in comments (/explain, /review, /help)
 - **Comment Types**: Handles both PR conversation comments and inline code review comments
 
+### GitHub API Client
+- **PyGithub Wrapper**: Comprehensive GitHub API client with enhanced functionality
+- **JWT Authentication**: Automatic JWT generation for GitHub App authentication
+- **Token Management**: Automatic token caching and refresh (1-hour TTL)
+- **Installation Tokens**: Secure installation access token retrieval
+- **Exponential Backoff**: Automatic retry with exponential backoff (3 attempts, 2.0x multiplier)
+- **Rate Limit Handling**: Intelligent rate limit detection and retry
+- **PR Operations**:
+  - Get PR details (title, body, author, stats, URLs)
+  - Get PR diff (unified diff format)
+  - Post PR comments (Markdown supported)
+  - Add reactions to comments (+1, -1, heart, rocket, etc.)
+- **File Operations**: Get file contents from any branch/commit
+- **Commit Status**: Update commit status checks (pending, success, error, failure)
+- **Error Handling**: Comprehensive logging with GithubException handling
+- **Easy Mocking**: Design optimized for unit testing
+- **Client Caching**: Caches GitHub client instances per installation
+
+### Gemini API Client
+- **LangChain Integration**: Uses langchain-google-genai for AI-powered analysis
+- **Multiple Analysis Types**:
+  - Security analysis (SQL injection, XSS, secrets, CSRF, etc.)
+  - Performance analysis (N+1 queries, inefficient algorithms)
+  - Best practices review (naming, error handling, SOLID principles)
+  - Bug detection (null checks, edge cases, logic errors)
+  - General comprehensive review
+- **Structured Responses**: Pydantic models for type-safe findings
+- **Detailed Findings**: Severity levels, code locations, recommendations, example fixes
+- **Code Explanation**: Generate detailed explanations with complexity analysis
+- **Fix Suggestions**: AI-powered fix recommendations with trade-offs
+- **Model Flexibility**: Easy switching between Flash (fast/cheap) and Pro (capable/expensive)
+- **Cost Tracking**: Token counting and USD cost estimation
+- **Streaming Support**: Real-time response streaming (for future use)
+- **Retry Logic**: Exponential backoff for API failures (3 attempts, 2.0x multiplier)
+- **JSON Extraction**: Smart parsing of JSON from markdown code blocks
+- **Usage Statistics**: Track input/output tokens and cumulative costs
+- **Prompt Templates**: Pre-built templates for different analysis types
+- **Custom Configuration**: Configurable temperature, max tokens, top-p, top-k
+
 ### Architecture & Performance
 - **Multi-Agent Orchestration**: Built with LangGraph for sophisticated workflow management
 - **Stateless Design**: No database required - fully event-driven architecture

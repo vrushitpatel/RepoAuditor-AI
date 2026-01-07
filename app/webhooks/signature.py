@@ -37,14 +37,23 @@ async def verify_github_signature(
     body = await request.body()
 
     # Calculate expected signature
-    secret = settings.github_webhook_secret.encode("utf-8")
+    secret = settings.github.webhook_secret.encode("utf-8")
     expected_signature = (
         "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
     )
 
     # Compare signatures securely
     if not hmac.compare_digest(expected_signature, x_hub_signature_256):
-        logger.error("Invalid webhook signature")
+        logger.error(
+            "Invalid webhook signature",
+            extra={
+                "extra_fields": {
+                    "received_signature": x_hub_signature_256[:20] + "...",
+                    "expected_signature": expected_signature[:20] + "...",
+                    "body_length": len(body),
+                }
+            },
+        )
         raise HTTPException(status_code=401, detail="Invalid signature")
 
     logger.debug("Webhook signature verified successfully")

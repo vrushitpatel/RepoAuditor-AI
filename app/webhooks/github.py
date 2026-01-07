@@ -30,12 +30,31 @@ metrics_data = {
 }
 
 
+@router.get("/github")
+async def webhook_info() -> Dict[str, str]:
+    """
+    GET endpoint for webhook information and testing.
+
+    GitHub webhooks use POST, but this GET endpoint is useful
+    for verifying the webhook URL is accessible.
+
+    Returns:
+        Information about the webhook endpoint
+    """
+    return {
+        "endpoint": "/webhooks/github",
+        "method": "POST",
+        "description": "GitHub webhook receiver",
+        "note": "Send POST requests with X-GitHub-Event and X-Hub-Signature-256 headers",
+    }
+
+
 @router.post("/github")
 async def handle_github_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
-    x_github_event: str = Header(..., alias="X-GitHub-Event"),
-    x_hub_signature_256: str = Header(..., alias="X-Hub-Signature-256"),
+    x_github_event: str = Header(None, alias="X-GitHub-Event"),
+    x_hub_signature_256: str = Header(None, alias="X-Hub-Signature-256"),
 ) -> Dict[str, str]:
     """
     Handle incoming GitHub webhook events.
@@ -64,6 +83,23 @@ async def handle_github_webhook(
     # Increment total webhooks counter
     metrics_data["total_webhooks"] += 1
 
+    # Check required headers
+    if not x_github_event:
+        logger.error("Missing X-GitHub-Event header")
+        return {
+            "status": "error",
+            "message": "Missing X-GitHub-Event header",
+            "note": "This endpoint expects GitHub webhook requests with proper headers",
+        }
+
+    if not x_hub_signature_256:
+        logger.error("Missing X-Hub-Signature-256 header")
+        return {
+            "status": "error",
+            "message": "Missing X-Hub-Signature-256 header",
+            "note": "Webhook signature is required for security",
+        }
+
     # Verify webhook signature (raises HTTPException if invalid)
     try:
         body = await verify_github_signature(request, x_hub_signature_256)
@@ -88,6 +124,15 @@ async def handle_github_webhook(
             }
         },
     )
+
+    # Handle ping event (sent when webhook is first created)
+    if x_github_event == "ping":
+        logger.info("Received ping event from GitHub")
+        return {
+            "status": "received",
+            "message": "pong",
+            "webhook_id": payload.get("hook_id"),
+        }
 
     # Route to appropriate event handler
     try:

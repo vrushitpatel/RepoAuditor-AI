@@ -37,9 +37,9 @@ else
 fi
 
 # Upgrade pip
-echo ""
-echo "Upgrading pip..."
-pip install --upgrade pip
+# echo ""
+# echo "Upgrading pip..."
+# pip install --upgrade pip
 
 # Install dependencies
 echo ""

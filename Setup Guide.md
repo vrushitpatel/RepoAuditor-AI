@@ -30,12 +30,14 @@ Before you begin, ensure you have:
 ### Step 1: Create a GitHub App
 
 1. Navigate to your GitHub account settings:
+
    - For organizations: `https://github.com/organizations/YOUR_ORG/settings/apps`
    - For personal: `https://github.com/settings/apps`
 
 2. Click **"New GitHub App"**
 
 3. Fill in the basic information:
+
    - **GitHub App name**: `RepoAuditor AI` (or your preferred name)
    - **Homepage URL**: `https://github.com/YOUR_USERNAME/repoauditor-ai`
    - **Webhook URL**: `https://your-domain.com/webhooks/github`
@@ -47,16 +49,19 @@ Before you begin, ensure you have:
      ```
 
 4. Set **Permissions**:
+
    - Repository permissions:
      - **Contents**: Read-only (to read code)
      - **Pull requests**: Read & write (to comment on PRs)
      - **Metadata**: Read-only (required)
 
 5. Subscribe to **Events**:
+
    - ✓ Pull request
    - ✓ Pull request review comment
 
 6. **Where can this GitHub App be installed?**
+
    - Select "Only on this account" (for testing)
    - Or "Any account" (for public distribution)
 
@@ -79,6 +84,11 @@ Before you begin, ensure you have:
 2. Click **"Install"** next to your account/organization
 3. Choose **"All repositories"** or **"Only select repositories"**
 4. Click **"Install"**
+
+## JIRA API Token:
+
+1. Visit: https://id.atlassian.com/manage-profile/security/api-tokens
+2. Create API Key here
 
 ## Google Gemini API Setup
 
@@ -132,11 +142,13 @@ touch tests/__init__.py
 ### Step 3: Create Configuration Files
 
 Create `pyproject.toml`:
+
 ```bash
 # See the pyproject.toml file in the repository
 ```
 
 Create `.gitignore`:
+
 ```bash
 # See the .gitignore file in the repository
 ```
@@ -171,26 +183,56 @@ cp .env.example .env
 
 ### Step 2: Configure Environment Variables
 
-Edit `.env` file with your actual credentials:
+Edit `.env` file with your actual credentials. The configuration is organized into logical groups:
+
+#### GitHub App Configuration
 
 ```env
 # GitHub App Configuration
 GITHUB_APP_ID=123456  # Replace with your App ID
 GITHUB_PRIVATE_KEY_PATH=./private-key.pem  # Path to your downloaded .pem file
-GITHUB_WEBHOOK_SECRET=your_webhook_secret_here  # The secret you generated
+GITHUB_WEBHOOK_SECRET=your_webhook_secret_here  # The secret you generated (min 16 chars)
+GITHUB_INSTALLATION_ID=  # Optional, auto-detected if not set
+```
 
+#### Gemini AI Configuration
+
+```env
 # Gemini AI Configuration
-GEMINI_API_KEY=your_gemini_api_key_here  # Your Gemini API key
+GEMINI_API_KEY=your_gemini_api_key_here  # Your Gemini API key (starts with AIza)
+GEMINI_MODEL_NAME=gemini-2.0-flash-exp  # Model to use
+GEMINI_TEMPERATURE=0.2  # Response randomness (0.0-1.0)
+GEMINI_MAX_TOKENS=8192  # Maximum response tokens
+```
 
+#### JIRA Integration (Optional)
+
+```env
 # Jira Integration (Optional - leave blank if not using)
-JIRA_BASE_URL=
-JIRA_EMAIL=
-JIRA_API_TOKEN=
+JIRA_BASE_URL=https://your-domain.atlassian.net
+JIRA_EMAIL=your-email@example.com
+JIRA_API_TOKEN=your_jira_api_token
+```
 
-# Application Configuration
-LOG_LEVEL=INFO
-HOST=0.0.0.0
-PORT=8000
+#### Server Configuration
+
+```env
+# Server Configuration
+HOST=0.0.0.0  # Server bind address
+PORT=8000  # Server port
+DEBUG=False  # Debug mode (development only)
+LOG_LEVEL=INFO  # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+```
+
+#### Feature Flags and Performance
+
+```env
+# Feature Flags
+ENABLE_CACHING=True  # Enable response caching
+CACHE_TTL_SECONDS=3600  # Cache TTL (1 hour)
+RATE_LIMIT_PER_HOUR=100  # API requests per hour per repo
+MAX_FILES_PER_REVIEW=50  # Max files per PR review
+REVIEW_TIMEOUT_SECONDS=300  # Review timeout (5 minutes)
 ```
 
 ### Step 3: Add Private Key File
@@ -200,6 +242,246 @@ PORT=8000
 cp ~/Downloads/your-app-name.2024-01-01.private-key.pem ./private-key.pem
 
 # Ensure it's not tracked by git (should be in .gitignore)
+```
+
+### Step 4: Understanding the Configuration System
+
+RepoAuditor AI uses **Pydantic Settings** for type-safe configuration management with validation. The configuration is organized into logical groups for better maintainability.
+
+#### Configuration Structure
+
+The configuration system is divided into the following groups:
+
+1. **GitHubAppSettings**: GitHub App credentials and settings
+2. **GeminiAPISettings**: Google Gemini API configuration
+3. **JIRASettings**: JIRA integration settings (optional)
+4. **ServerSettings**: Server and logging configuration
+5. **FeaturesSettings**: Feature flags and performance settings
+
+#### Accessing Configuration in Code
+
+Use the `get_settings()` function to access configuration throughout your application:
+
+```python
+from app.config import get_settings
+
+# Get settings instance (cached)
+settings = get_settings()
+
+# Access grouped settings
+print(f"GitHub App ID: {settings.github.app_id}")
+print(f"Gemini Model: {settings.gemini.model_name}")
+print(f"Server Port: {settings.server.port}")
+print(f"JIRA Enabled: {settings.jira.enabled}")
+print(f"Caching Enabled: {settings.features.enable_caching}")
+```
+
+#### Configuration Validation
+
+The system automatically validates:
+
+- **Type checking**: All values are validated against their types
+- **Required fields**: Missing required fields will raise errors
+- **Value ranges**: Numeric values are validated (e.g., port: 1-65535)
+- **Format validation**: API keys, URLs, and paths are validated
+- **File existence**: Private key file existence is checked
+
+#### Example Configuration Validation
+
+```python
+# This will fail validation:
+# - GitHub App ID must be an integer
+# - Gemini API key must start with "AIza"
+# - Private key file must exist
+# - Temperature must be between 0.0 and 1.0
+
+# Valid configuration:
+GITHUB_APP_ID=123456
+GEMINI_API_KEY=AIzaSyABCDEFGHIJKLMNOPQRSTUVWXYZ
+GEMINI_TEMPERATURE=0.2
+```
+
+#### Using Structured Logging
+
+The logging system supports both standard and structured JSON logging:
+
+```python
+from app.utils.logger import setup_logger, LogContext, log_function_call
+
+# Create a logger
+logger = setup_logger(__name__)
+
+# Basic logging
+logger.info("Application started")
+
+# Structured logging with JSON output
+logger_json = setup_logger(__name__, structured=True)
+logger_json.info("Processing request", extra={"extra_fields": {"user_id": 123}})
+
+# Using log context for request tracking
+with LogContext(request_id="req-12345"):
+    logger.info("Processing request")  # Includes request_id in logs
+
+# Decorator for function call logging
+@log_function_call(logger)
+def process_data(data: dict) -> dict:
+    return data
+```
+
+#### Using the In-Memory Cache System
+
+RepoAuditor AI includes a simple, thread-safe in-memory cache to prevent duplicate operations (like reviewing the same PR multiple times):
+
+##### Basic Cache Usage
+
+```python
+from app.utils.cache import get_cache
+
+# Get the global cache instance
+cache = get_cache()
+
+# Set a value with 5 minute TTL
+cache.set("repo/pr/123", "reviewed", ttl_seconds=300)
+
+# Get the value
+value = cache.get("repo/pr/123")
+if value:
+    print(f"Already reviewed: {value}")
+
+# Delete a specific entry
+cache.delete("repo/pr/123")
+
+# Clear all entries
+cache.clear()
+```
+
+##### Preventing Duplicate PR Reviews
+
+```python
+from app.utils.cache import get_cache
+
+def should_review_pr(repo: str, pr_number: int) -> bool:
+    """Check if a PR should be reviewed (not recently reviewed)."""
+    cache = get_cache()
+    cache_key = f"{repo}/pr/{pr_number}"
+
+    # Check if already reviewed recently
+    if cache.get(cache_key):
+        return False
+
+    # Mark as reviewed for 1 hour
+    cache.set(cache_key, "reviewed", ttl_seconds=3600)
+    return True
+
+# Usage
+if should_review_pr("owner/repo", 123):
+    # Proceed with review
+    pass
+else:
+    # Skip - already reviewed recently
+    pass
+```
+
+##### Cache Features
+
+- **Thread-Safe**: All operations use locks for concurrent access
+- **TTL Support**: Automatic expiration of entries
+- **Automatic Cleanup**: Background thread removes expired entries every 60 seconds
+- **Simple API**: Easy-to-use get/set/delete/clear methods
+- **No External Dependencies**: Pure Python, no Redis or database needed
+
+##### Cache Configuration
+
+The cache respects the `ENABLE_CACHING` setting from your `.env` file:
+
+```env
+# Enable or disable caching
+ENABLE_CACHING=True
+
+# Cache TTL (used as default if not specified in set())
+CACHE_TTL_SECONDS=3600
+```
+
+##### Advanced Cache Operations
+
+```python
+from app.utils.cache import SimpleCache, get_cache
+
+# Create a custom cache instance with different cleanup interval
+custom_cache = SimpleCache(cleanup_interval_seconds=30)
+
+# Get cache size
+cache = get_cache()
+print(f"Cache has {cache.size()} entries")
+print(f"Cache has {len(cache)} entries")  # Alternative syntax
+
+# Check if key exists (without retrieving value)
+if "repo/pr/123" in cache:
+    print("Key exists in cache")
+
+# Manual cleanup of expired entries
+removed = cache.cleanup_expired()
+print(f"Removed {removed} expired entries")
+
+# Stop automatic cleanup (useful for testing or shutdown)
+cache.stop_cleanup()
+```
+
+##### Cache Use Cases
+
+1. **Duplicate PR Review Prevention**:
+   ```python
+   cache_key = f"{owner}/{repo}/pr/{pr_number}"
+   if not cache.get(cache_key):
+       # Review the PR
+       perform_review()
+       cache.set(cache_key, "reviewed", ttl_seconds=3600)
+   ```
+
+2. **Rate Limiting**:
+   ```python
+   cache_key = f"rate_limit/{repo}/{hour}"
+   count = cache.get(cache_key) or 0
+   if count < max_requests:
+       cache.set(cache_key, count + 1, ttl_seconds=3600)
+       # Process request
+   else:
+       # Rate limit exceeded
+       pass
+   ```
+
+3. **Temporary Data Storage**:
+   ```python
+   # Store API response for 5 minutes
+   cache.set("api_response/repo_info", data, ttl_seconds=300)
+
+   # Retrieve cached response
+   cached_data = cache.get("api_response/repo_info")
+   ```
+
+#### Environment-Specific Configuration
+
+For different environments (development, staging, production), you can create environment-specific files:
+
+```bash
+# Development
+.env.development
+
+# Staging
+.env.staging
+
+# Production
+.env.production
+```
+
+Then load the appropriate file:
+
+```bash
+# Development
+cp .env.development .env
+
+# Production
+cp .env.production .env
 ```
 
 ## Running the Application
@@ -262,6 +544,7 @@ ngrok http 8000
 ### Step 2: Test Webhook Reception
 
 1. Check application logs to ensure it's running:
+
 ```bash
 # If running locally:
 # You should see: "Application startup complete"
@@ -273,6 +556,7 @@ docker-compose logs -f app
 2. Create a test pull request in a repository where the app is installed
 
 3. Monitor the logs for webhook reception:
+
 ```bash
 # You should see webhook events being received and processed
 ```
@@ -352,6 +636,7 @@ server {
 ```
 
 Enable HTTPS with Let's Encrypt:
+
 ```bash
 sudo certbot --nginx -d your-domain.com
 ```
@@ -359,6 +644,7 @@ sudo certbot --nginx -d your-domain.com
 #### 4. Monitoring
 
 Set up monitoring for:
+
 - Application health (`/health` endpoint)
 - Error logs
 - Response times
@@ -367,6 +653,7 @@ Set up monitoring for:
 #### 5. Update GitHub App Webhook URL
 
 Update your GitHub App settings with the production URL:
+
 ```
 https://your-domain.com/webhooks/github
 ```
@@ -380,6 +667,7 @@ https://your-domain.com/webhooks/github
 **Symptoms**: No logs showing webhook events
 
 **Solutions**:
+
 - Verify webhook URL is correct in GitHub App settings
 - Check that the application is running and accessible
 - Verify ngrok tunnel is active (for local testing)
@@ -391,6 +679,7 @@ https://your-domain.com/webhooks/github
 **Symptoms**: `401 Unauthorized` or authentication failures
 
 **Solutions**:
+
 - Verify `GITHUB_APP_ID` is correct
 - Check that private key file path is correct
 - Ensure private key file has correct permissions
@@ -401,6 +690,7 @@ https://your-domain.com/webhooks/github
 **Symptoms**: AI review fails or returns errors
 
 **Solutions**:
+
 - Verify `GEMINI_API_KEY` is valid
 - Check API quota/billing in Google Cloud Console
 - Review API error messages in logs
@@ -411,6 +701,7 @@ https://your-domain.com/webhooks/github
 **Symptoms**: `ModuleNotFoundError` or import failures
 
 **Solutions**:
+
 ```bash
 # Reinstall dependencies
 pip install -e .
@@ -424,6 +715,7 @@ docker-compose build --no-cache
 **Symptoms**: `Address already in use` error
 
 **Solutions**:
+
 ```bash
 # Find process using port 8000
 # On Linux/macOS:
@@ -437,11 +729,13 @@ netstat -ano | findstr :8000
 ### Debugging Tips
 
 1. **Enable Debug Logging**:
+
 ```env
 LOG_LEVEL=DEBUG
 ```
 
 2. **Check Application Logs**:
+
 ```bash
 # Local:
 # Logs printed to console
@@ -451,6 +745,7 @@ docker-compose logs -f app
 ```
 
 3. **Test GitHub Authentication**:
+
 ```python
 # Create a test script to verify GitHub App authentication
 from app.integrations.github_client import GitHubClient
@@ -460,10 +755,12 @@ client = GitHubClient()
 ```
 
 4. **Verify Webhook Signature**:
+
 - Check that `GITHUB_WEBHOOK_SECRET` matches GitHub App settings
 - Review signature verification logic in `app/webhooks/signature.py`
 
 5. **Test Gemini API Connection**:
+
 ```python
 # Test script
 from app.integrations.gemini_client import GeminiClient

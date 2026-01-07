@@ -94,3 +94,76 @@ class ReviewResult(BaseModel):
     comments: List[ReviewComment]
     severity: str = Field(default="info")  # info, warning, error
     issues_found: int = 0
+
+
+class Comment(BaseModel):
+    """GitHub comment model."""
+
+    id: int
+    body: str
+    user: User
+    created_at: str
+    updated_at: str
+    html_url: str
+
+
+class Issue(BaseModel):
+    """GitHub issue model (also used for PRs in issue_comment events)."""
+
+    id: int
+    number: int
+    title: str
+    body: Optional[str] = None
+    state: str
+    user: User
+    html_url: str
+    pull_request: Optional[Dict[str, Any]] = None  # Present if this is a PR
+
+
+class IssueCommentEvent(BaseModel):
+    """GitHub issue_comment webhook event.
+
+    Triggered when a comment is created on an issue or PR.
+    """
+
+    action: str  # created, edited, deleted
+    issue: Issue
+    comment: Comment
+    repository: Repository
+    installation: Installation
+    sender: User
+
+
+class PullRequestReviewComment(BaseModel):
+    """GitHub pull request review comment model."""
+
+    id: int
+    body: str
+    user: User
+    path: str
+    position: Optional[int] = None
+    original_position: Optional[int] = None
+    commit_id: str
+    original_commit_id: str
+    diff_hunk: str
+    line: Optional[int] = None
+    original_line: Optional[int] = None
+    created_at: str
+    updated_at: str
+    html_url: str
+    pull_request_url: str
+    in_reply_to_id: Optional[int] = None
+
+
+class PullRequestReviewCommentEvent(BaseModel):
+    """GitHub pull_request_review_comment webhook event.
+
+    Triggered when a comment is created on a PR diff.
+    """
+
+    action: str  # created, edited, deleted
+    comment: PullRequestReviewComment
+    pull_request: PullRequest
+    repository: Repository
+    installation: Installation
+    sender: User

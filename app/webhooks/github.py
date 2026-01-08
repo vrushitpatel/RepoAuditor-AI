@@ -13,7 +13,13 @@ from app.models.webhook_events import (
 )
 from app.webhooks.signature import verify_github_signature
 from app.workflows.executor import execute_workflow_from_webhook
+from app.workflows.command_handlers import route_command
 from app.utils.logger import setup_logger
+from app.utils.helpers import (
+    should_skip_review,
+    validate_webhook_payload,
+)
+from app.config import settings
 
 logger = setup_logger(__name__)
 
@@ -173,6 +179,7 @@ async def handle_pull_request_event(
     Handle pull request webhook events.
 
     Triggers code review for PR opened, synchronized (new commits), or reopened.
+    Includes duplicate review prevention to avoid processing the same PR multiple times.
 
     Args:
         payload: Webhook payload dictionary
@@ -205,7 +212,39 @@ async def handle_pull_request_event(
 
     # Trigger review for opened, synchronize (new commits), or reopened actions
     if action in ["opened", "synchronize", "reopened"]:
-        logger.info(f"Triggering code review for PR #{pr_number}")
+        # Check for duplicate review (prevent reviewing same PR within cache TTL)
+        cache_ttl = settings.features.cache_ttl_seconds if settings.features.enable_caching else 0
+
+        if cache_ttl > 0:
+            skip, reason = should_skip_review(
+                repo_name=repo_name,
+                pr_number=pr_number,
+                ttl_seconds=cache_ttl
+            )
+
+            if skip:
+                logger.info(
+                    f"Skipping duplicate review for {repo_name}#{pr_number}: {reason}",
+                    extra={
+                        "extra_fields": {
+                            "pr_number": pr_number,
+                            "repo": repo_name,
+                            "skip_reason": reason,
+                        }
+                    },
+                )
+                return
+
+        logger.info(
+            f"Triggering code review for PR #{pr_number}",
+            extra={
+                "extra_fields": {
+                    "pr_number": pr_number,
+                    "repo": repo_name,
+                    "action": action,
+                }
+            },
+        )
         metrics_data["reviews_triggered"] += 1
 
         # Process review in background to avoid blocking webhook response
@@ -387,24 +426,26 @@ async def process_command(command: str, event: IssueCommentEvent) -> None:
     """
     Process commands from issue comments.
 
+    Routes commands to appropriate handlers in command_handlers module.
+
     Args:
         command: Command name (without / prefix)
         event: Issue comment event data
     """
-    logger.info(f"Processing command: {command}")
+    logger.info(
+        f"Processing command: {command}",
+        extra={
+            "extra_fields": {
+                "command": command,
+                "pr_number": event.issue.number,
+                "repo": event.repository.full_name,
+                "commenter": event.comment.user.login,
+            }
+        }
+    )
 
-    # TODO: Implement command handlers
-    if command == "explain":
-        logger.info(f"Would explain PR #{event.issue.number}")
-        # Future: Generate explanation of PR changes
-    elif command == "review":
-        logger.info(f"Would trigger review for PR #{event.issue.number}")
-        # Future: Trigger full code review
-    elif command == "help":
-        logger.info("Would show help message")
-        # Future: Post help comment
-    else:
-        logger.warning(f"Unknown command: {command}")
+    # Route to command handler
+    await route_command(command, event)
 
 
 async def process_review_comment_command(
@@ -414,18 +455,28 @@ async def process_review_comment_command(
     """
     Process commands from pull request review comments.
 
+    Routes commands to appropriate handlers in command_handlers module.
+
     Args:
         command: Command name (without / prefix)
         event: Review comment event data
     """
-    logger.info(f"Processing review comment command: {command}")
+    logger.info(
+        f"Processing review comment command: {command}",
+        extra={
+            "extra_fields": {
+                "command": command,
+                "pr_number": event.pull_request.number,
+                "repo": event.repository.full_name,
+                "file": event.comment.path,
+                "line": event.comment.line,
+                "commenter": event.comment.user.login,
+            }
+        }
+    )
 
-    # TODO: Implement command handlers
-    if command == "explain":
-        logger.info(f"Would explain code at {event.comment.path}:{event.comment.line}")
-        # Future: Explain specific code section
-    else:
-        logger.warning(f"Unknown command: {command}")
+    # Route to command handler
+    await route_command(command, event)
 
 
 @router.get("/metrics")

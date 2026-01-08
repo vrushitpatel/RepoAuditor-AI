@@ -54,6 +54,7 @@
 - **Detailed Findings**: Severity levels, code locations, recommendations, example fixes
 - **Code Explanation**: Generate detailed explanations with complexity analysis
 - **Fix Suggestions**: AI-powered fix recommendations with trade-offs
+- **Text Generation**: General-purpose text generation with token/cost tracking
 - **Model Flexibility**: Easy switching between Flash (fast/cheap) and Pro (capable/expensive)
 - **Cost Tracking**: Token counting and USD cost estimation
 - **Streaming Support**: Real-time response streaming (for future use)
@@ -63,14 +64,40 @@
 - **Prompt Templates**: Pre-built templates for different analysis types
 - **Custom Configuration**: Configurable temperature, max tokens, top-p, top-k
 
+### Command Handlers
+
+- **Slash Command Processing**: Dedicated handlers for interactive PR commands
+- **Command Routing**: Intelligent routing based on comment type (PR vs review comment)
+- **Background Execution**: All commands run asynchronously without blocking webhooks
+- **Error Recovery**: Graceful error handling with user-friendly error messages
+- **Cost Tracking**: Comprehensive tracking of tokens and costs for each command
+- **Supported Commands**:
+  - `/explain` - Generate AI explanation of PR changes
+  - `/review` - Trigger on-demand code review
+  - `/help` - Display command documentation
+- **Context-Aware**: Different behavior for PR comments vs line-specific review comments
+- **Metadata Logging**: All command executions logged with full context
+- **Reply Threading**: Responses posted in appropriate comment threads
+
 ### Architecture & Performance
 
 - **Multi-Agent Orchestration**: Built with LangGraph for sophisticated workflow management
 - **Stateless Design**: No database required - fully event-driven architecture
 - **In-Memory Caching**: Thread-safe cache to prevent duplicate PR reviews
+  - Automatic cache expiration with configurable TTL
+  - Duplicate review prevention (default: 5 minutes)
+  - Background cleanup thread for expired entries
+  - Cache metadata tracking (cost, tokens, duration, severity counts)
 - **Rate Limiting**: Configurable API request limits per repository
 - **Timeout Protection**: Configurable review timeout to prevent hanging operations
 - **Automatic Retries**: Built-in retry logic with exponential backoff
+- **Helper Utilities**: Comprehensive helper functions for common tasks
+  - Cache key generation for PRs and commits
+  - Duplicate review detection and prevention
+  - Formatting utilities (duration, cost, tokens)
+  - Error context extraction for debugging
+  - Webhook payload validation
+  - Execution summary generation
 
 ### LangGraph State Management
 
@@ -194,18 +221,31 @@ RepoAuditor AI implements a sophisticated code review workflow using LangGraph w
 #### Execution Modes
 - **Single Execution**: Execute workflow for one PR
 - **Batch Execution**: Process multiple PRs concurrently with rate limiting
-- **Webhook Execution**: Triggered by GitHub webhook events
+- **Webhook Execution**: Triggered by GitHub webhook events (with duplicate prevention)
+- **Command Execution**: On-demand execution via slash commands
 - **Manual Testing**: Test workflow with sample data without webhooks
 - **Async Support**: Fully async/await for high performance
 
 #### Workflow Metrics
 Every workflow execution tracks:
-- **Duration**: Total workflow execution time
+- **Duration**: Total workflow execution time (formatted: "2m 45s", "1h 5m 30s")
 - **Findings**: Count and breakdown by severity/type
-- **Costs**: Total USD cost of AI API calls
-- **Tokens**: Input and output token counts
+- **Costs**: Total USD cost of AI API calls (formatted: "$0.0125", "$1.50")
+- **Tokens**: Input and output token counts (formatted: "15,234 tokens")
 - **API Calls**: Number of model invocations
 - **Approval Status**: Whether manual approval is required
+- **Cache Status**: Whether review was cached to prevent duplicates
+
+#### Enhanced Logging
+All workflow executions include comprehensive logging:
+- **Workflow start/end**: With full PR context
+- **Node execution**: Each workflow step logged
+- **API calls**: GitHub and Gemini API calls tracked
+- **Execution time**: Formatted duration for readability
+- **Cost tracking**: Formatted costs with proper precision
+- **Token usage**: Formatted with thousands separators
+- **Severity breakdown**: Counts by CRITICAL, HIGH, MEDIUM, LOW, INFO
+- **Error context**: Detailed error information with stack traces
 
 See [app/workflows/code_review_workflow.py](app/workflows/code_review_workflow.py) for complete workflow definition.
 
@@ -247,18 +287,120 @@ See [app/workflows/code_review_workflow.py](app/workflows/code_review_workflow.p
 - **Cache TTL**: Default 3600 seconds (1 hour)
 - **Rate Limit**: Default 100 requests per hour per repository
 
+### Slash Commands
+
+RepoAuditor AI supports interactive slash commands that can be triggered by commenting on pull requests:
+
+#### `/explain` - Explain PR Changes
+**Usage**: Comment `/explain` on a pull request
+
+**Features**:
+- Generates AI-powered explanation of what the PR does
+- Provides high-level summary (2-3 sentences)
+- Lists key changes by file with bullet points
+- Identifies potential impact and areas of concern
+- Suggests related changes or dependencies needed
+- Uses Gemini Flash for cost-effective generation
+- Displays metadata: tokens used, cost, generation time
+
+**Example Response**:
+```markdown
+## 📝 PR Explanation
+
+This PR refactors the authentication system to use JWT tokens instead of
+session cookies. The changes improve security and enable stateless authentication.
+
+Key changes by file:
+- auth/login.py: Added JWT token generation on successful login
+- middleware/auth.py: Updated to validate JWT tokens instead of sessions
+- models/user.py: Added token refresh mechanism
+
+Potential impact: All existing sessions will be invalidated after deployment.
+```
+
+**Line-Specific Explanation**: Comment `/explain` on a specific line in a code review to get an explanation of that particular change.
+
+---
+
+#### `/review` - Trigger On-Demand Review
+**Usage**: Comment `/review` on a pull request
+
+**Features**:
+- Triggers a full code review on demand
+- Same comprehensive analysis as automatic reviews
+- Analyzes security, performance, bugs, and best practices
+- Posts detailed findings with severity levels
+- Updates commit status check
+- Tracks costs and token usage
+- Runs in background without blocking
+
+**Example Response**:
+```markdown
+🤖 Code Review Initiated
+
+@username requested a code review. Starting analysis now...
+
+*This may take a minute or two depending on the size of the PR.*
+```
+
+Followed by the complete review results (same format as automatic reviews).
+
+**Use Cases**:
+- Re-run review after making changes
+- Request review on older PRs that weren't auto-reviewed
+- Bypass cache to get fresh analysis
+- Manual review for PRs that were skipped
+
+---
+
+#### `/help` - Show Available Commands
+**Usage**: Comment `/help` on a pull request
+
+**Features**:
+- Displays comprehensive help documentation
+- Lists all available commands with descriptions
+- Shows usage examples and tips
+- Includes configuration information
+- Links to documentation
+
+**Example Response**:
+```markdown
+## 🤖 RepoAuditor AI - Available Commands
+
+### 📝 `/explain`
+Get a detailed explanation of what this PR does...
+
+### 🔍 `/review`
+Trigger a comprehensive code review...
+
+### ❓ `/help`
+Show this help message...
+```
+
+---
+
+#### Command Features
+- **Case Insensitive**: Commands work with any case (`/Review`, `/EXPLAIN`, etc.)
+- **Must Start Comment**: Commands must be at the beginning of the comment
+- **Background Processing**: Commands run asynchronously without blocking
+- **Error Handling**: Graceful error messages if command fails
+- **Cost Tracking**: All AI operations track tokens and costs
+- **Comprehensive Logging**: All command executions are logged with metadata
+
+---
+
 ### Supported Events
 
 - **Pull Request Events**:
-  - `opened` - New PR created
-  - `synchronize` - New commits pushed to PR
-  - `reopened` - Closed PR reopened
+  - `opened` - New PR created (triggers automatic review)
+  - `synchronize` - New commits pushed to PR (triggers automatic review)
+  - `reopened` - Closed PR reopened (triggers automatic review)
 - **Issue Comment Events**:
   - `created` - Comment added to PR conversation
   - Command detection for `/explain`, `/review`, `/help`
 - **Pull Request Review Comment Events**:
   - `created` - Inline comment on PR diff
-  - Command detection for code-specific explanations
+  - Command detection for `/explain` on specific code lines
 
 ### API Endpoints
 

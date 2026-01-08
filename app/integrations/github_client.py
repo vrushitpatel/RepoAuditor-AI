@@ -320,6 +320,73 @@ class GitHubClient:
             raise
 
     @retry(max_attempts=3, delay=1.0, backoff=2.0)
+    def post_review_comment_reply(
+        self,
+        repo_name: str,
+        pr_number: int,
+        comment_id: int,
+        body: str,
+        installation_id: int,
+    ) -> IssueComment:
+        """
+        Reply to an existing review comment on a pull request.
+
+        Args:
+            repo_name: Repository name in format "owner/repo"
+            pr_number: Pull request number
+            comment_id: ID of the comment to reply to
+            body: Reply body (Markdown supported)
+            installation_id: GitHub App installation ID
+
+        Returns:
+            Created reply comment object
+
+        Example:
+            ```python
+            client = GitHubClient()
+            reply = client.post_review_comment_reply(
+                "owner/repo",
+                123,
+                comment_id=456789,
+                body="Thanks for the feedback!",
+                installation_id=456
+            )
+            print(f"Reply posted: {reply.html_url}")
+            ```
+
+        Raises:
+            GithubException: If comment not found or API error occurs
+        """
+        try:
+            client = self._get_installation_client(installation_id)
+            repo = client.get_repo(repo_name)
+            pr = repo.get_pull(pr_number)
+
+            # Get the review comment and reply to it
+            review_comment = pr.get_review_comment(comment_id)
+            reply = review_comment.create_reply(body)
+
+            logger.info(
+                f"Posted reply to review comment {comment_id} on {repo_name}#{pr_number}",
+                extra={
+                    "extra_fields": {
+                        "repo": repo_name,
+                        "pr_number": pr_number,
+                        "comment_id": comment_id,
+                    }
+                },
+            )
+
+            return reply
+
+        except GithubException as e:
+            logger.error(
+                f"Failed to post review comment reply on {repo_name}#{pr_number}: {e}",
+                exc_info=True,
+            )
+            raise
+
+    @retry(max_attempts=3, delay=1.0, backoff=2.0)
     def add_reaction(
         self,
         repo_name: str,

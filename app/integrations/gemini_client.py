@@ -703,3 +703,91 @@ Files reviewed: {files_count}
 
         response = await self.model.ainvoke(prompt)
         return str(response.content)
+
+    @retry(max_attempts=3, delay=2.0)
+    async def generate_text(
+        self,
+        prompt: str,
+        system_message: Optional[str] = None,
+    ) -> ExplanationResponse:
+        """
+        Generate text response from a prompt.
+
+        Simple general-purpose text generation method. Returns structured response
+        with text, token usage, and cost tracking.
+
+        Args:
+            prompt: The prompt to send to the model
+            system_message: Optional system message to set context
+
+        Returns:
+            ExplanationResponse with text, tokens, and cost
+
+        Example:
+            ```python
+            client = GeminiClient(use_flash=True)
+
+            response = await client.generate_text(
+                "Explain what this PR does",
+                system_message="You are a helpful code review assistant"
+            )
+
+            print(response.text)
+            print(f"Cost: ${response.cost_usd:.4f}")
+            print(f"Tokens: {response.tokens_used}")
+            ```
+        """
+        try:
+            # Build messages
+            messages = []
+
+            if system_message:
+                messages.append(SystemMessage(content=system_message))
+
+            messages.append(HumanMessage(content=prompt))
+
+            # Invoke model
+            logger.debug(f"Generating text with {len(prompt)} char prompt")
+
+            response = await self.model.ainvoke(messages)
+
+            # Extract text content
+            text = str(response.content)
+
+            # Track token usage
+            input_tokens = response.usage_metadata.get("input_tokens", 0)
+            output_tokens = response.usage_metadata.get("output_tokens", 0)
+            total_tokens = input_tokens + output_tokens
+
+            # Update tracking
+            self.total_input_tokens += input_tokens
+            self.total_output_tokens += output_tokens
+
+            # Calculate cost
+            cost_usd = self.model_config.calculate_cost(input_tokens, output_tokens)
+            self.total_cost_usd += cost_usd
+
+            logger.info(
+                f"Text generation complete: {output_tokens} tokens, ${cost_usd:.4f}",
+                extra={
+                    "extra_fields": {
+                        "input_tokens": input_tokens,
+                        "output_tokens": output_tokens,
+                        "total_tokens": total_tokens,
+                        "cost_usd": cost_usd,
+                        "text_length": len(text),
+                    }
+                },
+            )
+
+            return ExplanationResponse(
+                text=text,
+                tokens_used=total_tokens,
+                cost_usd=cost_usd,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to generate text: {e}", exc_info=True)
+            raise

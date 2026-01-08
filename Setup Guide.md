@@ -200,7 +200,7 @@ GITHUB_INSTALLATION_ID=  # Optional, auto-detected if not set
 ```env
 # Gemini AI Configuration
 GEMINI_API_KEY=your_gemini_api_key_here  # Your Gemini API key (starts with AIza)
-GEMINI_MODEL_NAME=gemini-2.0-flash-exp  # Model to use
+GEMINI_MODEL_NAME=gemini-2.5-flash-lite  # Model to use
 GEMINI_TEMPERATURE=0.2  # Response randomness (0.0-1.0)
 GEMINI_MAX_TOKENS=8192  # Maximum response tokens
 ```
@@ -430,6 +430,7 @@ cache.stop_cleanup()
 ##### Cache Use Cases
 
 1. **Duplicate PR Review Prevention**:
+
    ```python
    cache_key = f"{owner}/{repo}/pr/{pr_number}"
    if not cache.get(cache_key):
@@ -439,6 +440,7 @@ cache.stop_cleanup()
    ```
 
 2. **Rate Limiting**:
+
    ```python
    cache_key = f"rate_limit/{repo}/{hour}"
    count = cache.get(cache_key) or 0
@@ -451,6 +453,7 @@ cache.stop_cleanup()
    ```
 
 3. **Temporary Data Storage**:
+
    ```python
    # Store API response for 5 minutes
    cache.set("api_response/repo_info", data, ttl_seconds=300)

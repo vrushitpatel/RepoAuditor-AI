@@ -192,24 +192,57 @@ Return response in JSON format:
 
 GENERAL_REVIEW_PROMPT = """Review the following code changes comprehensively:
 
-Pull Request Title: {pr_title}
-Description: {pr_description}
-
 Analyze for:
-- Security vulnerabilities
-- Performance issues
-- Best practices violations
-- Potential bugs
-- Code quality
-- Maintainability
-- Testing coverage
+1. **Security Vulnerabilities**: SQL injection, XSS, hardcoded secrets, command injection, insecure eval()
+2. **Performance Issues**: N+1 queries, inefficient algorithms, missing caching
+3. **Best Practices Violations**: Naming, error handling, code organization
+4. **Potential Bugs**: Null checks, edge cases, logic errors
+5. **Code Quality**: Maintainability, readability, testing coverage
 
 Code Diff:
 {code_diff}
 
-Provide a structured review with findings categorized by type and severity.
+**CRITICAL JSON FORMATTING RULES**:
+1. Return ONLY valid JSON - no extra text before or after
+2. Use double quotes (") for all strings
+3. Escape special characters: \\n for newlines, \\\\ for backslashes, \\" for quotes
+4. Do NOT include actual newlines inside string values
+5. Code snippets must be on a single line with \\n for line breaks
+6. If you include code examples, escape them properly
 
-Return findings in JSON format with the same structure as specialized analyses."""
+**REQUIRED JSON FORMAT**:
+```json
+{{
+    "findings": [
+        {{
+            "severity": "CRITICAL",
+            "type": "security",
+            "title": "SQL Injection Vulnerability",
+            "description": "User input is concatenated directly into SQL query without sanitization, allowing attackers to inject malicious SQL.",
+            "location": {{
+                "file_path": "auth.py",
+                "line_start": 5,
+                "line_end": 5,
+                "code_snippet": "query = \\"SELECT * FROM users WHERE username='\\" + username + \\"'\\""
+            }},
+            "recommendation": "Use parameterized queries or an ORM to prevent SQL injection.",
+            "example_fix": "query = \\"SELECT * FROM users WHERE username = ?\\"\\ndb.execute(query, (username,))",
+            "references": ["https://owasp.org/www-community/attacks/SQL_Injection"]
+        }}
+    ],
+    "summary": "Found critical security vulnerabilities that must be fixed."
+}}
+```
+
+If no issues found:
+```json
+{{
+    "findings": [],
+    "summary": "Code looks good. No significant issues found."
+}}
+```
+
+Return ONLY the JSON object, nothing else."""
 
 # Prompt templates dictionary
 PROMPTS: Dict[str, str] = {
@@ -276,10 +309,6 @@ def format_fix_prompt(issue_description: str, code_context: str) -> str:
     )
 
 
-def format_general_prompt(
-    code_diff: str, pr_title: str = "", pr_description: str = ""
-) -> str:
+def format_general_prompt(code_diff: str) -> str:
     """Format general review prompt."""
-    return GENERAL_REVIEW_PROMPT.format(
-        code_diff=code_diff, pr_title=pr_title, pr_description=pr_description
-    )
+    return GENERAL_REVIEW_PROMPT.format(code_diff=code_diff)

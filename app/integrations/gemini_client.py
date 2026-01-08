@@ -78,6 +78,7 @@ class GeminiClient:
         self.model_config = model_config
 
         # Initialize the model
+        # Note: response_mime_type may help force JSON output but is not guaranteed to be supported
         self.model = ChatGoogleGenerativeAI(
             model=model_config.model_name,
             google_api_key=settings.gemini.api_key,
@@ -197,12 +198,27 @@ class GeminiClient:
 
             return analysis
 
-        except (json.JSONDecodeError, KeyError) as e:
-            logger.warning(f"Failed to parse structured response: {e}")
-            # Fallback: Return unstructured analysis
+        except (json.JSONDecodeError, KeyError, ValueError) as e:
+            logger.error(
+                f"Failed to parse structured response: {e}",
+                extra={
+                    "extra_fields": {
+                        "error_type": type(e).__name__,
+                        "error_msg": str(e),
+                        "response_preview": content[:1000] if content else "empty",
+                        "analysis_type": analysis_type,
+                    }
+                }
+            )
+
+            # Log full response to file for debugging
+            logger.debug(f"Full AI response that failed to parse:\n{content}")
+
+            # Fallback: Return unstructured analysis with the raw content
+            # This helps us see what the AI actually returned
             return ReviewAnalysis(
                 findings=[],
-                summary=content,
+                summary=f"⚠️ Failed to parse AI response. Raw output:\n\n{content[:2000]}",
                 tokens_used=input_tokens + output_tokens,
                 cost_usd=cost,
             )
@@ -477,6 +493,26 @@ class GeminiClient:
         self.total_cost_usd = 0.0
         logger.info("Usage stats reset")
 
+    def _fix_json_string(self, json_str: str) -> str:
+        """
+        Attempt to fix common JSON formatting issues.
+
+        Args:
+            json_str: Potentially malformed JSON string
+
+        Returns:
+            Fixed JSON string
+        """
+        import re
+
+        # Remove any trailing commas before } or ]
+        json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
+
+        # Fix unescaped newlines in strings (this is tricky and may not catch all cases)
+        # This is a best-effort attempt
+
+        return json_str
+
     def _extract_json(self, content: str) -> Dict:
         """
         Extract JSON from response content.
@@ -493,18 +529,43 @@ class GeminiClient:
             json.JSONDecodeError: If JSON cannot be extracted
         """
         # Try to extract JSON from markdown code blocks
+        json_str = content.strip()
+
         if "```json" in content:
             start = content.find("```json") + 7
             end = content.find("```", start)
-            json_str = content[start:end].strip()
+            if end > start:
+                json_str = content[start:end].strip()
         elif "```" in content:
             start = content.find("```") + 3
             end = content.find("```", start)
-            json_str = content[start:end].strip()
-        else:
-            json_str = content.strip()
+            if end > start:
+                json_str = content[start:end].strip()
 
-        return json.loads(json_str)
+        # Try to find JSON object if not already extracted
+        if not json_str.startswith("{"):
+            # Look for first { to last }
+            start_idx = content.find("{")
+            end_idx = content.rfind("}")
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                json_str = content[start_idx:end_idx + 1]
+
+        # Try to fix common JSON issues
+        json_str = self._fix_json_string(json_str)
+
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError as e:
+            logger.error(
+                f"JSON parse error: {e}",
+                extra={
+                    "extra_fields": {
+                        "content_preview": content[:500],
+                        "json_str_preview": json_str[:500] if len(json_str) > 0 else "empty",
+                    }
+                }
+            )
+            raise
 
     # Legacy methods (keeping for backward compatibility)
 

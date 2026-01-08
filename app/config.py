@@ -43,15 +43,35 @@ class GitHubAppSettings(BaseSettings):
         description="GitHub App installation ID (optional, auto-detected if not set)",
     )
 
-    @field_validator("private_key_path")
+    @field_validator("private_key_path", mode="before")
     @classmethod
-    def validate_private_key_path(cls, v: Path) -> Path:
-        """Validate that the private key file exists."""
-        if not v.exists():
-            raise ValueError(f"Private key file not found: {v}")
-        if not v.is_file():
-            raise ValueError(f"Private key path is not a file: {v}")
-        return v
+    def validate_private_key_path(cls, v) -> Path:
+        """Validate that the private key file exists.
+        
+        Resolves relative paths from the project root directory.
+        """
+        # Convert to Path if it's a string
+        if isinstance(v, str):
+            path = Path(v)
+        else:
+            path = Path(v)
+        
+        # If path is relative, resolve it from the project root
+        if not path.is_absolute():
+            # Get the project root (parent of app directory)
+            project_root = Path(__file__).parent.parent
+            path = (project_root / path).resolve()
+        
+        # Validate file exists
+        if not path.exists():
+            raise ValueError(
+                f"Private key file not found: {path}\n"
+                f"Please ensure the file exists at this path, or set GITHUB_PRIVATE_KEY_PATH "
+                f"to the correct path relative to the project root (e.g., './private-key.pem')."
+            )
+        if not path.is_file():
+            raise ValueError(f"Private key path is not a file: {path}")
+        return path
 
     @property
     def private_key(self) -> str:
@@ -76,9 +96,9 @@ class GeminiAPISettings(BaseSettings):
         min_length=20,
     )
     model_name: str = Field(
-        default="gemini-2.0-flash-exp",
+        default="gemini-2.5-flash-lite",
         description="Gemini model to use for code review",
-        examples=["gemini-2.0-flash-exp", "gemini-1.5-pro-latest"],
+        examples=["gemini-2.5-flash-lite", "gemini-1.5-pro-latest"],
     )
     temperature: float = Field(
         default=0.2,

@@ -12,7 +12,7 @@ from app.models.webhook_events import (
     PullRequestReviewCommentEvent,
 )
 from app.webhooks.signature import verify_github_signature
-from app.workflows.code_review_workflow import process_pull_request_review
+from app.workflows.executor import execute_workflow_from_webhook
 from app.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -210,7 +210,7 @@ async def handle_pull_request_event(
 
         # Process review in background to avoid blocking webhook response
         background_tasks.add_task(
-            process_pull_request_review,
+            execute_workflow_from_webhook,
             event=event,
         )
     else:

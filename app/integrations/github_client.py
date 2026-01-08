@@ -132,6 +132,18 @@ class GitHubClient:
             repo = client.get_repo(repo_name)
             pr = repo.get_pull(pr_number)
 
+            # Fetch the list of changed files
+            files = []
+            for file in pr.get_files():
+                files.append({
+                    "filename": file.filename,
+                    "status": file.status,
+                    "additions": file.additions,
+                    "deletions": file.deletions,
+                    "changes": file.changes,
+                    "patch": file.patch or "",
+                })
+
             details = {
                 "number": pr.number,
                 "title": pr.title,
@@ -154,6 +166,7 @@ class GitHubClient:
                 "html_url": pr.html_url,
                 "diff_url": pr.diff_url,
                 "patch_url": pr.patch_url,
+                "files": files,  # Add the files list
             }
 
             logger.info(
@@ -206,16 +219,13 @@ class GitHubClient:
             requests.RequestException: If HTTP request fails
         """
         try:
-            client = self._get_installation_client(installation_id)
-            repo = client.get_repo(repo_name)
-            pr = repo.get_pull(pr_number)
-
-            # Get diff URL and fetch it
-            diff_url = pr.diff_url
+            # Use the GitHub API endpoint instead of the web URL
+            # The correct API endpoint is: https://api.github.com/repos/{owner}/{repo}/pulls/{number}
+            api_url = f"https://api.github.com/repos/{repo_name}/pulls/{pr_number}"
             token = self.auth.get_installation_token(installation_id)
 
             response = requests.get(
-                diff_url,
+                api_url,
                 headers={
                     "Authorization": f"token {token}",
                     "Accept": "application/vnd.github.v3.diff",

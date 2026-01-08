@@ -48,7 +48,7 @@ class Installation(BaseModel):
     """GitHub App installation model."""
 
     id: int
-    account: User
+    account: Optional[User] = None
 
 
 class PullRequestEvent(BaseModel):

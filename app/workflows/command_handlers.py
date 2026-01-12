@@ -98,7 +98,7 @@ Keep the explanation clear and accessible to both technical and non-technical re
         # Format response comment
         comment = f"""## 📝 PR Explanation
 
-{response.text}
+{response.explanation}
 
 ---
 <details>
@@ -474,7 +474,7 @@ Keep the explanation concise (3-5 sentences).
         # Format response comment
         comment = f"""## 💡 Code Explanation
 
-{response.text}
+{response.explanation}
 
 ---
 <details>

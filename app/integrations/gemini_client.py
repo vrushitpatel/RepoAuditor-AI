@@ -732,7 +732,7 @@ Files reviewed: {files_count}
                 system_message="You are a helpful code review assistant"
             )
 
-            print(response.text)
+            print(response.explanation)
             print(f"Cost: ${response.cost_usd:.4f}")
             print(f"Tokens: {response.tokens_used}")
             ```
@@ -781,11 +781,9 @@ Files reviewed: {files_count}
             )
 
             return ExplanationResponse(
-                text=text,
+                explanation=text,
                 tokens_used=total_tokens,
                 cost_usd=cost_usd,
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
             )
 
         except Exception as e:

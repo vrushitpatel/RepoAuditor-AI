@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"P:\\\\[01] AI Application\\\\AI Code Assistant + Reviewer\\\\[02] Source Code\\\\RepoAuditor AI\\\\repoauditor-ai\\\\app\\\\agents\\\\__init__.py\")",
+      "Bash(\"P:\\\\[01] AI Application\\\\AI Code Assistant + Reviewer\\\\[02] Source Code\\\\RepoAuditor AI\\\\repoauditor-ai\\\\app\\\\prompts\\\\__init__.py\")"
+    ]
+  }
+}

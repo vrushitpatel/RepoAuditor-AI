@@ -7,7 +7,10 @@ that can be triggered via GitHub PR comments.
 from typing import Dict, Any, Optional
 from datetime import datetime
 
+from github import GithubException
+
 from app.agents.explainer import ExplainerAgent
+from app.agents.cicd_generator import CICDGenerator
 from app.integrations.github_client import GitHubClient
 from app.integrations.gemini_client import GeminiClient
 from app.models.webhook_events import IssueCommentEvent, PullRequestReviewCommentEvent
@@ -342,6 +345,177 @@ Please try again or contact support if the issue persists.
 
 
 # ============================================================================
+# Command: /generate-ci - Generate CI/CD Workflows
+# ============================================================================
+
+async def handle_generate_ci_command(event: IssueCommentEvent) -> None:
+    """
+    Handle /generate-ci command to generate CI/CD workflows.
+
+    Supports:
+    - /generate-ci -> Generate all workflows
+    - /generate-ci all -> Generate all workflows
+    - /generate-ci test -> Generate test workflow
+    - /generate-ci lint -> Generate lint workflow
+    - /generate-ci build -> Generate Docker build workflow
+    - /generate-ci deploy -> Generate deployment workflow
+
+    Args:
+        event: Issue comment event containing the command
+    """
+    repo_name = event.repository.full_name
+    pr_number = event.issue.number
+    installation_id = event.installation.id
+    comment_body = event.comment.body.strip()
+
+    logger.info(
+        f"Handling /generate-ci command for {repo_name}#{pr_number}",
+        extra={
+            "extra_fields": {
+                "repo_name": repo_name,
+                "pr_number": pr_number,
+                "commenter": event.comment.user.login,
+                "comment": comment_body,
+            }
+        }
+    )
+
+    start_time = datetime.utcnow()
+
+    try:
+        # Parse workflow types from command
+        # Command format: /generate-ci [optional: test|lint|build|deploy|all]
+        parts = comment_body.split(maxsplit=1)
+        workflow_arg = parts[1].strip() if len(parts) > 1 else "all"
+
+        # Parse multiple workflow types (e.g., "/generate-ci test lint")
+        workflow_types = workflow_arg.split()
+        if not workflow_types or workflow_types == [""]:
+            workflow_types = ["all"]
+
+        logger.info(f"Generating workflows: {workflow_types}")
+
+        # Initialize clients
+        github_client = GitHubClient()
+        gemini_client = GeminiClient(use_flash=True)
+
+        # Initialize CI/CD Generator
+        cicd_generator = CICDGenerator(gemini_client, github_client)
+
+        # Post acknowledgment comment
+        ack_comment = f"""## 🚀 CI/CD Generator Started
+
+@{event.comment.user.login} I'm analyzing your project and generating customized CI/CD workflows...
+
+**Requested workflows:** {', '.join(workflow_types)}
+
+*This will take a moment while I detect your tech stack and create optimized workflows.*
+"""
+
+        github_client.post_pr_comment(
+            repo_name=repo_name,
+            pr_number=pr_number,
+            body=ack_comment,
+            installation_id=installation_id
+        )
+
+        # Generate workflows
+        workflows = await cicd_generator.generate_workflows(
+            repo_name=repo_name,
+            installation_id=installation_id,
+            workflow_types=workflow_types,
+            pr_number=pr_number,
+        )
+
+        # Get project info for formatting
+        from app.utils.project_detector import ProjectDetector
+        detector = ProjectDetector(github_client)
+        project_info = await detector.detect_project(
+            repo_name=repo_name,
+            installation_id=installation_id,
+            pr_number=pr_number,
+        )
+
+        # Format workflows for comment
+        formatted_comment = cicd_generator.format_workflows_for_comment(
+            workflows=workflows,
+            project_info=project_info,
+        )
+
+        # Calculate metrics
+        end_time = datetime.utcnow()
+        duration = (end_time - start_time).total_seconds()
+
+        # Post the workflows in a comment
+        github_client.post_pr_comment(
+            repo_name=repo_name,
+            pr_number=pr_number,
+            body=formatted_comment,
+            installation_id=installation_id
+        )
+
+        logger.info(
+            f"Posted CI/CD workflows for PR #{pr_number}",
+            extra={
+                "extra_fields": {
+                    "repo_name": repo_name,
+                    "pr_number": pr_number,
+                    "workflow_types": workflow_types,
+                    "workflows_count": len(workflows),
+                    "duration_seconds": duration,
+                    "project_type": project_info.project_type,
+                }
+            }
+        )
+
+    except Exception as e:
+        error_context = extract_error_context(e, repo_name, pr_number)
+
+        logger.error(
+            f"Failed to handle /generate-ci command: {e}",
+            exc_info=True,
+            extra={"extra_fields": error_context}
+        )
+
+        # Post error comment with helpful information
+        try:
+            github_client = GitHubClient()
+            error_comment = f"""## ❌ CI/CD Generation Failed
+
+Sorry @{event.comment.user.login}, I encountered an error while generating CI/CD workflows.
+
+**Error Details:**
+```
+{str(e)}
+```
+
+**Troubleshooting Tips:**
+- Make sure your repository has a valid project structure
+- For Python: Ensure `requirements.txt`, `pyproject.toml`, or `Pipfile` exists
+- For Node.js: Ensure `package.json` exists
+- For Docker: Ensure `Dockerfile` exists
+- Try generating specific workflows: `/generate-ci test` or `/generate-ci lint`
+
+**Valid Workflow Types:**
+- `test` - Generate test workflow
+- `lint` - Generate code quality workflow
+- `build` - Generate Docker build workflow (requires Dockerfile)
+- `deploy` - Generate deployment workflow
+- `all` - Generate all applicable workflows
+
+**Need help?** Try `/help` to see all available commands.
+"""
+            github_client.post_pr_comment(
+                repo_name=repo_name,
+                pr_number=pr_number,
+                body=error_comment,
+                installation_id=installation_id
+            )
+        except Exception as post_error:
+            logger.error(f"Failed to post error comment: {post_error}")
+
+
+# ============================================================================
 # Command: /help - Show Available Commands
 # ============================================================================
 
@@ -375,13 +549,12 @@ async def handle_help_command(event: IssueCommentEvent) -> None:
 I'm an AI-powered code review assistant. Here are the commands you can use:
 
 ### 📝 `/explain`
-Get a detailed explanation of what this PR does, including:
-- High-level summary of changes
-- Key changes by file
-- Potential impact areas
-- Dependencies or related changes
+Get a detailed explanation of code in this PR:
+- `/explain` - Explain the entire PR diff
+- `/explain app/main.py` - Explain a specific file
+- `/explain app/utils.py:MyClass` - Explain a specific class or function
 
-**Usage:** Just comment `/explain` on the PR
+**Usage:** `/explain [optional: file_path or file_path:target]`
 
 ---
 
@@ -394,6 +567,25 @@ Trigger a comprehensive code review that checks for:
 - Potential bugs
 
 **Usage:** Just comment `/review` on the PR
+
+---
+
+### 🚀 `/generate-ci`
+Generate customized CI/CD workflows for your project:
+- `/generate-ci` or `/generate-ci all` - Generate all workflows
+- `/generate-ci test` - Generate test workflow only
+- `/generate-ci lint` - Generate code quality workflow only
+- `/generate-ci build` - Generate Docker build workflow
+- `/generate-ci deploy` - Generate deployment workflow
+- `/generate-ci test lint` - Generate multiple specific workflows
+
+**What you get:**
+- ✅ Ready-to-use GitHub Actions workflows
+- ✅ Customized for your tech stack (Python, Node.js, Docker)
+- ✅ Detects your test framework, linter, package manager
+- ✅ Best practices included automatically
+
+**Usage:** `/generate-ci [optional: test|lint|build|deploy|all]`
 
 ---
 
@@ -410,13 +602,15 @@ Show this help message with all available commands.
 - Commands must be at the start of your comment
 - Reviews are automatically triggered when you open a PR or push new commits
 - Use `/review` to manually re-run a review
+- Use `/explain` without arguments to get a friendly overview of your PR
+- Generated CI/CD workflows are production-ready - just copy them to `.github/workflows/`
 
 ---
 
 ### 🔧 Configuration
 
 RepoAuditor AI uses:
-- **AI Model:** Google Gemini 2.0 Flash
+- **AI Model:** Google Gemini 2.0 Flash Lite
 - **Auto-Review:** Enabled for PR open/sync/reopen events
 - **Cache:** Reviews are cached for 1 hour to prevent duplicates
 
@@ -632,6 +826,8 @@ async def route_command(
             await handle_explain_command(event)
         elif command == "review":
             await handle_review_command(event)
+        elif command == "generate-ci":
+            await handle_generate_ci_command(event)
         elif command == "help":
             await handle_help_command(event)
         else:

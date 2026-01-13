@@ -396,7 +396,7 @@ def extract_command(text: str) -> str | None:
     Extract command from comment text.
 
     Commands start with / and are at the beginning of a line.
-    Supported commands: /explain, /review, /help
+    Supported commands: /explain, /review, /help, /generate-ci
 
     Args:
         text: Comment text to parse
@@ -407,13 +407,16 @@ def extract_command(text: str) -> str | None:
     Examples:
         >>> extract_command("/explain")
         'explain'
+        >>> extract_command("/generate-ci all")
+        'generate-ci'
         >>> extract_command("Some text /explain")
         None
         >>> extract_command("/review\\nWith description")
         'review'
     """
     # Match commands at the start of the text or after newline
-    pattern = r"^/(\w+)"
+    # Pattern matches alphanumeric characters, underscores, and hyphens
+    pattern = r"^/([a-zA-Z0-9_-]+)"
     match = re.match(pattern, text.strip())
 
     if match:

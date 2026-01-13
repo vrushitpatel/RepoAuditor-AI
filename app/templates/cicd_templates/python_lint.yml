@@ -1,0 +1,31 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: {{PYTHON_VERSION}}
+
+    - name: Install linting tools
+      run: |
+        python -m pip install --upgrade pip
+        {{LINTER_INSTALL}}
+
+    - name: Run {{LINTER}}
+      run: {{LINTER_COMMAND}}
+
+    {{TYPE_CHECK_STEP}}

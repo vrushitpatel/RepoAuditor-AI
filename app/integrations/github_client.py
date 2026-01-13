@@ -1,6 +1,5 @@
 """GitHub API client for interacting with repositories and pull requests."""
 
-import time
 from typing import Any, Dict, List, Optional
 
 import requests
@@ -166,7 +165,7 @@ class GitHubClient:
                 "html_url": pr.html_url,
                 "diff_url": pr.diff_url,
                 "patch_url": pr.patch_url,
-                "files": files,  # Add the files list
+                "files": files,
             }
 
             logger.info(
@@ -812,4 +811,3 @@ class GitHubClient:
         """
         pr = self.get_pull_request(installation_id, repo_full_name, pr_number)
         pr.create_issue_comment(body)
-        logger.info(f"Added comment to PR #{pr_number}")

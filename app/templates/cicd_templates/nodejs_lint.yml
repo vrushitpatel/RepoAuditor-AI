@@ -1,0 +1,29 @@
+name: Code Quality
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: {{NODE_VERSION}}
+
+    - name: Install dependencies
+      run: {{INSTALL_COMMAND}}
+
+    - name: Run {{LINTER}}
+      run: {{LINTER_COMMAND}}
+
+    {{TYPE_CHECK_STEP}}

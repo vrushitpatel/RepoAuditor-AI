@@ -13,7 +13,7 @@ from app.models.webhook_events import (
 )
 from app.webhooks.signature import verify_github_signature
 from app.workflows.executor import execute_workflow_from_webhook
-from app.workflows.command_handlers import route_command
+from app.commands.router_instance import get_router
 from app.utils.logger import setup_logger
 from app.utils.helpers import (
     should_skip_review,
@@ -429,7 +429,8 @@ async def process_command(command: str, event: IssueCommentEvent) -> None:
     """
     Process commands from issue comments.
 
-    Routes commands to appropriate handlers in command_handlers module.
+    Routes commands to appropriate agents via the command router
+    or multi-agent workflow (based on settings).
 
     Args:
         command: Command name (without / prefix)
@@ -443,12 +444,51 @@ async def process_command(command: str, event: IssueCommentEvent) -> None:
                 "pr_number": event.issue.number,
                 "repo": event.repository.full_name,
                 "commenter": event.comment.user.login,
+                "workflow": "multi-agent" if settings.features.use_multi_agent_workflow else "command-router",
             }
         }
     )
 
-    # Route to command handler
-    await route_command(command, event)
+    # Route based on configuration
+    if settings.features.use_multi_agent_workflow:
+        # Use multi-agent workflow
+        logger.info("🔀 Using multi-agent workflow")
+        from app.workflows.executor import execute_multi_agent_workflow_from_webhook
+
+        # Extract command args
+        comment_body = event.comment.body.strip()
+        command_with_args = comment_body.split(maxsplit=1)
+        args = command_with_args[1] if len(command_with_args) > 1 else ""
+
+        # Build PR data
+        pr_data = {
+            "repo_name": event.repository.full_name,
+            "pr_number": event.issue.number,
+            "pr_title": event.issue.title,
+            "pr_description": event.issue.body or "",
+            "pr_author": event.issue.user.login,
+            # Note: For commands, we don't have SHA immediately
+            # The workflow will fetch them if needed
+            "head_sha": "",
+            "base_sha": "",
+        }
+
+        await execute_multi_agent_workflow_from_webhook(
+            event_type="command_created",
+            pr_data=pr_data,
+            installation_id=event.installation.id,
+            command={
+                "name": command,
+                "args": args,
+                "commenter": event.comment.user.login,
+                "comment_id": event.comment.id,
+            }
+        )
+    else:
+        # Use command router (existing)
+        logger.info("🔀 Using command router")
+        router = get_router()
+        await router.route(event)
 
 
 async def process_review_comment_command(

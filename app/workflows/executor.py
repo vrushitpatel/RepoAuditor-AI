@@ -642,6 +642,246 @@ Workflow:
 
 
 # ============================================================================
+# Multi-Agent Workflow Executor
+# ============================================================================
+
+async def execute_multi_agent_workflow_from_webhook(
+    event_type: str,
+    pr_data: Dict[str, Any],
+    installation_id: int,
+    command: Optional[Dict[str, Any]] = None,
+    github_client: Optional[Any] = None,
+    gemini_client: Optional[Any] = None,
+) -> Dict[str, Any]:
+    """
+    Execute unified multi-agent workflow from webhook events.
+
+    This function routes to different agents based on event type:
+    - PR opened/synchronized → Code Review
+    - /explain command → Explainer
+    - /test command → Test Analyst
+    - /generate-ci command → CI/CD Generator
+
+    Args:
+        event_type: Event type ("pr_opened", "pr_synchronized", "command_created")
+        pr_data: PR information (repo_name, pr_number, sha, etc.)
+        installation_id: GitHub App installation ID
+        command: Optional command info for command events
+        github_client: Optional GitHub client (will create if not provided)
+        gemini_client: Optional Gemini client (will create if not provided)
+
+    Returns:
+        Dictionary with execution results
+
+    Example:
+        ```python
+        # PR opened
+        result = await execute_multi_agent_workflow_from_webhook(
+            event_type="pr_opened",
+            pr_data={
+                "repo_name": "owner/repo",
+                "pr_number": 123,
+                "pr_title": "Fix bug",
+                "head_sha": "abc123",
+                "base_sha": "def456",
+            },
+            installation_id=456789,
+        )
+
+        # Command received
+        result = await execute_multi_agent_workflow_from_webhook(
+            event_type="command_created",
+            pr_data={...},
+            installation_id=456789,
+            command={
+                "name": "explain",
+                "args": "app/main.py",
+                "commenter": "user123",
+                "comment_id": 789,
+            }
+        )
+        ```
+    """
+    from app.agents.state import AgentState, Command
+    from app.workflows.multi_agent_workflow import get_multi_agent_workflow
+    from app.integrations.github_client import GitHubClient
+    from app.integrations.gemini_client import GeminiClient
+
+    repo_name = pr_data.get("repo_name", "unknown")
+    pr_number = pr_data.get("pr_number", 0)
+
+    logger.info(
+        f"Executing multi-agent workflow: {event_type} for {repo_name}#{pr_number}",
+        extra={
+            "extra_fields": {
+                "event_type": event_type,
+                "repo_name": repo_name,
+                "pr_number": pr_number,
+                "has_command": command is not None,
+            }
+        }
+    )
+
+    workflow_start = datetime.utcnow()
+
+    try:
+        # Initialize clients if not provided
+        if github_client is None:
+            github_client = GitHubClient()
+        if gemini_client is None:
+            gemini_client = GeminiClient(use_flash=True)
+
+        # Create initial state
+        state: AgentState = {
+            "event_type": event_type,
+            "command": command,
+            "pr_data": pr_data,
+            "agent_result": None,
+            "error": None,
+            "metadata": {
+                "started_at": datetime.utcnow().isoformat(),
+                "total_cost_usd": 0.0,
+                "total_tokens": 0,
+            },
+            "target_agent": None,
+            "installation_id": installation_id,
+            "repo_name": repo_name,
+            "pr_number": pr_number,
+            "github_client": github_client,
+            "gemini_client": gemini_client,
+        }
+
+        logger.debug(
+            f"Initialized state for {event_type}",
+            extra={
+                "extra_fields": {
+                    "state_keys": list(state.keys()),
+                    "command_name": command["name"] if command else None,
+                }
+            }
+        )
+
+        # Get workflow and execute
+        workflow = get_multi_agent_workflow()
+
+        logger.info(f"Invoking multi-agent workflow...")
+        final_state = await workflow.ainvoke(state)
+
+        workflow_end = datetime.utcnow()
+        total_duration = (workflow_end - workflow_start).total_seconds()
+
+        # Build result
+        if final_state.get("error"):
+            logger.error(
+                f"Multi-agent workflow failed: {final_state['error']}",
+                extra={
+                    "extra_fields": {
+                        "repo_name": repo_name,
+                        "pr_number": pr_number,
+                        "error": final_state["error"],
+                        "duration_seconds": total_duration,
+                        "target_agent": final_state.get("target_agent"),
+                    }
+                }
+            )
+
+            return {
+                "success": False,
+                "error": final_state["error"],
+                "repo_name": repo_name,
+                "pr_number": pr_number,
+                "duration_seconds": total_duration,
+                "target_agent": final_state.get("target_agent"),
+            }
+
+        # Success
+        metadata = final_state.get("metadata", {})
+
+        logger.info(
+            f"Multi-agent workflow completed successfully",
+            extra={
+                "extra_fields": {
+                    "repo_name": repo_name,
+                    "pr_number": pr_number,
+                    "duration_seconds": total_duration,
+                    "target_agent": final_state.get("target_agent"),
+                    "tokens_used": metadata.get("tokens_used", 0),
+                    "cost_usd": metadata.get("cost_usd", 0.0),
+                }
+            }
+        )
+
+        return {
+            "success": True,
+            "repo_name": repo_name,
+            "pr_number": pr_number,
+            "target_agent": final_state.get("target_agent"),
+            "result": final_state.get("agent_result"),
+            "duration_seconds": total_duration,
+            "tokens_used": metadata.get("tokens_used", 0),
+            "cost_usd": metadata.get("cost_usd", 0.0),
+        }
+
+    except Exception as e:
+        workflow_end = datetime.utcnow()
+        total_duration = (workflow_end - workflow_start).total_seconds()
+
+        error_context = extract_error_context(e, repo_name, pr_number)
+        error_context["duration_seconds"] = total_duration
+        error_context["event_type"] = event_type
+
+        logger.error(
+            f"Multi-agent workflow execution failed: {e}",
+            exc_info=True,
+            extra={
+                "extra_fields": error_context
+            }
+        )
+
+        return {
+            "success": False,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "repo_name": repo_name,
+            "pr_number": pr_number,
+            "duration_seconds": total_duration,
+        }
+
+
+async def execute_workflow_from_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Execute workflow from AgentState (used by router).
+
+    This is a convenience function that executes the old code review workflow
+    from an AgentState dict.
+
+    Args:
+        state: AgentState dictionary
+
+    Returns:
+        Result dictionary with summary and metadata
+    """
+    pr_data = state.get("pr_data", {})
+
+    result = await execute_code_review_workflow(
+        repo_name=pr_data.get("repo_name"),
+        pr_number=pr_data.get("pr_number"),
+        installation_id=state.get("installation_id"),
+        pr_title=pr_data.get("pr_title", ""),
+        pr_author=pr_data.get("pr_author", ""),
+        pr_description=pr_data.get("pr_description", ""),
+        commit_sha=pr_data.get("head_sha", ""),
+    )
+
+    # Convert WorkflowState to simple dict
+    return {
+        "summary": f"Code review completed with {len(result.get('review_results', []))} findings",
+        "tokens_used": result.get("metadata", {}).get("total_tokens", 0),
+        "cost_usd": result.get("metadata", {}).get("total_cost_usd", 0.0),
+    }
+
+
+# ============================================================================
 # Main Entry Point (for testing)
 # ============================================================================
 

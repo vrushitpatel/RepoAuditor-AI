@@ -159,13 +159,12 @@ def main():
         if response.status_code == 200:
             print(f"\n✓ Application is running at {BASE_URL}")
         else:
-            print(f"\n❌ Application responded with status {response.status_code}")
-            return
-    except:
-        print(f"\n❌ Application is NOT running at {BASE_URL}")
-        print("\nStart the application first:")
-        print("  uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload")
-        return
+            print(f"\n⚠️  Application responded with status {response.status_code}")
+            print("  Continuing anyway...")
+    except Exception as e:
+        print(f"\n⚠️  Cannot connect to {BASE_URL}/health: {e}")
+        print("  Attempting to continue with webhook tests anyway...")
+        print("  If webhooks fail, ensure server is running:")
 
     # Test ping event first
     print(f"\n{'='*70}")

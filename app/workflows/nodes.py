@@ -144,7 +144,7 @@ async def fetch_pr_node(state: WorkflowState) -> WorkflowState:
             "changed_files_count": pr_details.get("changed_files", 0),
             "additions": pr_details.get("additions", 0),
             "deletions": pr_details.get("deletions", 0),
-            "commit_sha": pr_details.get("head", {}).get("sha", ""),
+            "commit_sha": pr_details.get("head_sha", ""),
         }
 
         state = update_state(

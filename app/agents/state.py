@@ -7,6 +7,54 @@ from copy import deepcopy
 from app.models.webhook_events import FileChange, PullRequestEvent, ReviewComment
 
 
+class Command(TypedDict):
+    """Command structure extracted from comments."""
+
+    name: str  # Command name (e.g., "explain", "review", "test")
+    args: str  # Command arguments
+    commenter: str  # Who issued the command
+    comment_id: int  # GitHub comment ID
+
+
+class AgentState(TypedDict):
+    """
+    State for multi-agent workflow.
+
+    This state flows through the unified LangGraph workflow,
+    enabling routing between different agents based on event type.
+    """
+
+    # Event information
+    event_type: str  # "pr_opened", "pr_synchronized", "command_created"
+
+    # Command information (for command events)
+    command: Optional[Command]
+
+    # PR data
+    pr_data: Dict[str, Any]  # Full PR details (repo, number, sha, etc.)
+
+    # Agent execution results
+    agent_result: Optional[str]  # Result from agent execution (markdown)
+
+    # Error handling
+    error: Optional[str]  # Error message if execution failed
+
+    # Metadata
+    metadata: Dict[str, Any]  # Additional metadata (tokens, cost, duration, etc.)
+
+    # Routing information
+    target_agent: Optional[str]  # Which agent to route to
+
+    # GitHub context
+    installation_id: int
+    repo_name: str
+    pr_number: int
+
+    # Clients (passed through workflow)
+    github_client: Optional[Any]  # GitHubClient instance
+    gemini_client: Optional[Any]  # GeminiClient instance
+
+
 class WorkflowState(TypedDict):
     """
     General workflow state for LangGraph orchestration.

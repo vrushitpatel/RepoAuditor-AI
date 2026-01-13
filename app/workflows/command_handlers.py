@@ -83,7 +83,7 @@ async def handle_explain_command(event: IssueCommentEvent) -> None:
 
         pr_title = pr_details.get('title', '')
         pr_description = pr_details.get('body', '')
-        head_ref = pr_details.get('head', {}).get('sha', 'HEAD')
+        head_ref = pr_details.get('head_sha', 'HEAD')
 
         # Generate explanation based on what was requested
         if file_reference:
@@ -286,7 +286,7 @@ async def handle_review_command(event: IssueCommentEvent) -> None:
             pr_title=pr_details.get("title", ""),
             pr_author=pr_details.get("user", {}).get("login", "unknown"),
             pr_description=pr_details.get("body", ""),
-            commit_sha=pr_details.get("head", {}).get("sha", ""),
+            commit_sha=pr_details.get("head_sha", ""),
         )
 
         if result.get("error"):

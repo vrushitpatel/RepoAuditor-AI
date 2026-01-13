@@ -232,6 +232,10 @@ class FeaturesSettings(BaseSettings):
         description="Maximum time for review process in seconds (5 minutes)",
         gt=0,
     )
+    use_multi_agent_workflow: bool = Field(
+        default=False,
+        description="Use unified multi-agent LangGraph workflow instead of command router",
+    )
 
 
 class Settings(BaseSettings):

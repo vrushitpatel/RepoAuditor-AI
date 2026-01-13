@@ -285,8 +285,8 @@ class CodeFetcher:
                 installation_id=installation_id,
             )
 
-            base_ref = pr_details.get("base", {}).get("sha")
-            head_ref = pr_details.get("head", {}).get("sha")
+            base_ref = pr_details.get("base_sha")
+            head_ref = pr_details.get("head_sha")
 
             if not base_ref or not head_ref:
                 logger.error("Could not get base/head refs from PR")

@@ -112,30 +112,33 @@ async def create_test_branch_node(state: SecurityFixState) -> SecurityFixState:
         # Get the base branch ref from the PR
         if github_client:
             try:
-                # Get PR details to find base SHA
+                # Get PR details to find head SHA
                 pr_details = github_client.get_pr_details(
                     repo_name=repo_name,
                     pr_number=pr_number,
                     installation_id=installation_id,
                 )
 
-                base_sha = pr_details.get("head", {}).get("sha")
+                # Get the SHA from the PR head (the branch being reviewed)
+                head_sha = pr_details.get("head_sha")
 
-                if base_sha:
+                if head_sha:
+                    logger.info(f"Creating branch from SHA: {head_sha}")
+
                     # Create the branch
                     created = github_client.create_branch(
                         repo_name=repo_name,
                         branch_name=branch_name,
-                        sha=base_sha,
+                        sha=head_sha,
                         installation_id=installation_id,
                     )
 
                     if created:
-                        logger.info(f"Created branch: {branch_name}")
+                        logger.info(f"✅ Successfully created branch: {branch_name}")
                     else:
                         logger.warning(f"Branch {branch_name} may already exist")
                 else:
-                    logger.error("Could not find base SHA for branch creation")
+                    logger.error(f"Could not find head SHA in PR details. Keys: {list(pr_details.keys())}")
 
             except Exception as e:
                 logger.error(f"Branch creation error: {e}", exc_info=True)

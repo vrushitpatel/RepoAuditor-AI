@@ -32,7 +32,7 @@ class HelpAgent(BaseAgent):
             return AgentResponse(
                 success=True,
                 message=help_message,
-                metadata={"command_count": 5},  # Update this when adding commands
+                metadata={"command_count": 10},  # Updated with new commands
             )
 
         except Exception as e:
@@ -43,7 +43,7 @@ class HelpAgent(BaseAgent):
         """Generate the help message with all available commands."""
         return """## 🤖 RepoAuditor AI - Available Commands
 
-I'm your AI code review assistant! Here's what I can do:
+I'm your AI code review assistant with advanced LangGraph multi-agent workflows! Here's what I can do:
 
 ### 📝 Code Explanation
 
@@ -53,15 +53,11 @@ I'm your AI code review assistant! Here's what I can do:
 
 **`/explain <file>`** - Explain a specific file
 - Deep dive into a particular file
-- Examples:
-  - `/explain app/main.py`
-  - `/explain src/components/Button.tsx`
+- Examples: `/explain app/main.py`
 
 **`/explain <file>:<target>`** - Explain a specific function or class
 - Focus on a particular code element
-- Examples:
-  - `/explain app/main.py:health`
-  - `/explain src/utils.py:calculate_metrics`
+- Examples: `/explain app/main.py:health`
 
 ---
 
@@ -81,14 +77,53 @@ I'm your AI code review assistant! Here's what I can do:
 **`/generate-ci [type]`** - Generate CI/CD workflows
 - Analyzes your project (language, framework, dependencies)
 - Generates customized GitHub Actions workflows
-- Posts complete YAML in comment for you to copy
 
-**Types:**
-- `/generate-ci all` - All workflows (test, lint, build)
-- `/generate-ci test` - Just testing workflow
-- `/generate-ci lint` - Just linting workflow
-- `/generate-ci build` - Just build workflow
-- `/generate-ci deploy` - Deployment workflow
+**Types:** `all`, `test`, `lint`, `build`, `deploy`
+
+---
+
+### 🔒 Multi-Agent Workflows (NEW!)
+
+**`/fix-security-issues`** - Automated security fix workflow
+- 🔍 Scans code for security vulnerabilities
+- 🛠️ Generates fixes for each issue
+- ✅ Runs tests on fixes
+- 🎯 Creates PR with fixes (or rolls back if tests fail)
+
+**`/comprehensive-review`** - Multi-dimensional analysis
+- 🔐 Security analysis (parallel)
+- ⚡ Performance analysis (parallel)
+- ✨ Code quality analysis (parallel)
+- 📊 Aggregated report with severity breakdown
+- 🎫 Optional Jira ticket creation
+
+**`/auto-fix`** - Automated bug detection and fixing
+- 🐛 Detects bugs using pattern matching + AI
+- 🔧 Generates fixes for each bug
+- 🧪 Generates test cases for fixes
+- 📝 Creates PR with fixes AND tests
+
+**`/optimize`** - Code optimization workflow
+- 🌐 Detects primary language
+- 💄 Applies formatter (black, prettier, etc.)
+- 🔍 Applies linter (ruff, eslint, etc.)
+- ✅ Runs tests
+- ⏪ Rolls back if tests fail
+
+**`/incremental-review`** - Smart incremental reviews
+- 💾 Tracks previously reviewed files
+- 🆕 Only reviews new/changed files
+- 📝 Remembers previous feedback
+- ⚡ Faster reviews on subsequent commits
+
+---
+
+### ⏱️ Rate Limits
+
+To ensure fair usage:
+- **Per user:** 5 commands/hour
+- **Per PR:** 10 commands total
+- **Per repository:** 50 commands/day
 
 ---
 
@@ -100,31 +135,33 @@ I'm your AI code review assistant! Here's what I can do:
 
 ### 💡 Tips
 
-- Commands are case-insensitive
-- File paths can use `./` prefix or not (both work)
-- Commands work in PR comments and review comments
+- All commands work with or without `/` prefix
+- Multi-agent workflows use LangGraph orchestration
+- Commands can be chained on subsequent commits
 - Only repository collaborators can trigger commands
 
 ---
 
 ### 📊 How It Works
 
-1. You comment with a command (e.g., `/explain`)
-2. I analyze your PR using AI
-3. I post a detailed response in a new comment
-4. You can ask follow-up questions anytime!
+1. Comment with a command (e.g., `/fix-security-issues`)
+2. Rate limiter checks your quota
+3. LangGraph workflow orchestrates specialized agents
+4. Results posted as comment on your PR
+5. Metadata shows tokens used, cost, and duration
 
 ---
 
 ### 🔗 Resources
 
-- **Documentation:** Check the repository README
-- **Issues:** Report bugs or request features on GitHub
-- **Privacy:** I only access files in this PR, never store code
+- **Setup Guide:** See `docs/Testing_Github.md`
+- **Architecture:** See `docs/Agent.md`
+- **Issues:** Report bugs on GitHub
+- **Privacy:** Code analyzed in-memory, never stored
 
 ---
 
-**Need more help?** Just mention specific files or areas you want me to focus on!
+**Need more help?** Check our comprehensive documentation!
 
-*Powered by Google Gemini AI 🤖*
+*Powered by LangGraph + Google Gemini AI 🤖*
 """

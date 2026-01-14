@@ -811,3 +811,119 @@ class GitHubClient:
         """
         pr = self.get_pull_request(installation_id, repo_full_name, pr_number)
         pr.create_issue_comment(body)
+
+    def create_branch(
+        self,
+        repo_name: str,
+        branch_name: str,
+        sha: str,
+        installation_id: int,
+    ) -> bool:
+        """
+        Create a new branch from a specific SHA.
+
+        Args:
+            repo_name: Repository name in format "owner/repo"
+            branch_name: Name for the new branch
+            sha: SHA to branch from
+            installation_id: GitHub App installation ID
+
+        Returns:
+            True if branch created successfully, False if it already exists
+
+        Raises:
+            GithubException: If branch creation fails
+        """
+        try:
+            gh = self._get_installation_client(installation_id)
+            repo = gh.get_repo(repo_name)
+
+            # Create the branch
+            ref = repo.create_git_ref(
+                ref=f"refs/heads/{branch_name}",
+                sha=sha
+            )
+
+            logger.info(
+                f"Created branch {branch_name} in {repo_name}",
+                extra={
+                    "extra_fields": {
+                        "repo": repo_name,
+                        "branch": branch_name,
+                        "sha": sha,
+                    }
+                },
+            )
+
+            return True
+
+        except GithubException as e:
+            if e.status == 422:  # Branch already exists
+                logger.warning(f"Branch {branch_name} already exists in {repo_name}")
+                return False
+            else:
+                logger.error(f"Error creating branch: {e}", exc_info=True)
+                raise
+
+    def create_pull_request(
+        self,
+        repo_name: str,
+        title: str,
+        body: str,
+        head: str,
+        base: str,
+        installation_id: int,
+    ) -> dict:
+        """
+        Create a new pull request.
+
+        Args:
+            repo_name: Repository name in format "owner/repo"
+            title: PR title
+            body: PR description (markdown)
+            head: Branch containing changes
+            base: Branch to merge into
+            installation_id: GitHub App installation ID
+
+        Returns:
+            Dictionary with PR details including 'number' and 'html_url'
+
+        Raises:
+            GithubException: If PR creation fails
+        """
+        try:
+            gh = self._get_installation_client(installation_id)
+            repo = gh.get_repo(repo_name)
+
+            # Create the pull request
+            pr = repo.create_pull(
+                title=title,
+                body=body,
+                head=head,
+                base=base,
+            )
+
+            pr_data = {
+                "number": pr.number,
+                "html_url": pr.html_url,
+                "state": pr.state,
+                "title": pr.title,
+            }
+
+            logger.info(
+                f"Created PR #{pr.number} in {repo_name}: {title}",
+                extra={
+                    "extra_fields": {
+                        "repo": repo_name,
+                        "pr_number": pr.number,
+                        "head": head,
+                        "base": base,
+                    }
+                },
+            )
+
+            return pr_data
+
+        except GithubException as e:
+            logger.error(f"Error creating pull request: {e}", exc_info=True)
+            raise

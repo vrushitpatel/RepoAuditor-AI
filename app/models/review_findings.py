@@ -144,7 +144,7 @@ class FixSuggestion(BaseModel):
 class ModelConfig(BaseModel):
     """Configuration for Gemini models."""
 
-    model_name: str = Field(..., description="Model name (e.g., gemini-2.5-flash-lite)")
+    model_name: str = Field(..., description="Model name (e.g., gemini-2.5-flash)")
     temperature: float = Field(0.2, ge=0.0, le=2.0, description="Response randomness")
     max_output_tokens: int = Field(8192, gt=0, description="Maximum output tokens")
     top_p: float = Field(0.95, ge=0.0, le=1.0, description="Nucleus sampling parameter")
@@ -162,7 +162,7 @@ class ModelConfig(BaseModel):
     def flash(cls) -> "ModelConfig":
         """Get config for Gemini 2.0 Flash (fast, cost-effective)."""
         return cls(
-            model_name="gemini-2.5-flash-lite",
+            model_name="gemini-2.5-flash",
             temperature=0.2,
             max_output_tokens=8192,
             input_cost_per_million=0.075,

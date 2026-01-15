@@ -79,7 +79,7 @@ Use `/help` to see other available commands.
                 "findings_count": findings_count,
                 "tokens_used": tokens_used,
                 "cost_usd": cost_usd,
-                "model_name": "gemini-2.5-flash-lite",
+                "model_name": "gemini-2.5-flash",
             }
 
             self.log_success(context, metadata)

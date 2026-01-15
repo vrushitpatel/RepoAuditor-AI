@@ -1,15 +1,44 @@
 # RepoAuditor AI
 
-An AI-powered code review system that automatically reviews pull requests using LangGraph multi-agent orchestration and Google's Gemini 2.5 Pro API.
+An advanced AI-powered code review system with LangGraph multi-agent orchestration, featuring 10 intelligent commands for comprehensive code analysis, security fixes, automated bug detection, and code optimization.
 
-## Features
+## 🌟 Capstone Project Features
 
-- **Automated Code Review**: Intelligent analysis of pull requests using AI
-- **Multi-Agent Architecture**: Built with LangGraph for sophisticated orchestration
-- **GitHub Integration**: Seamless integration via GitHub App webhooks
-- **Stateless Design**: No database required - fully stateless architecture
-- **Jira Integration**: Optional ticket creation and tracking
-- **Production Ready**: Containerized with Docker, type-safe with full type hints
+- **5 Advanced LangGraph Workflows**: Complex multi-agent orchestration patterns
+- **File-Based Rate Limiting**: 3-tier limits (user/PR/repo) without database dependencies
+- **Parallel Execution**: Concurrent security, performance, and quality analysis
+- **Auto-Rollback Mechanisms**: Intelligent rollback when optimizations fail tests
+- **Stateful Incremental Reviews**: Track reviewed files across commits
+- **Production-Ready Architecture**: Comprehensive error handling, logging, and monitoring
+
+## 🤖 Available Commands
+
+### Basic Commands
+- **`/explain`** - Explain PR changes (entire PR, specific file, or function)
+- **`/review`** - Comprehensive code review with severity levels
+- **`/generate-ci`** - Auto-generate GitHub Actions workflows
+- **`/help`** - Display all available commands
+
+### Multi-Agent Workflows (LangGraph)
+- **`/fix-security-issues`** - Scan → Fix → Test → Create PR workflow
+- **`/comprehensive-review`** - Parallel security/performance/quality analysis
+- **`/auto-fix`** - Detect bugs → Generate fixes + tests → Create PR
+- **`/optimize`** - Auto-format/lint with rollback on test failure
+- **`/incremental-review`** - Smart file tracking across commits
+
+### Rate Limits
+- **Per user:** 5 commands/hour
+- **Per PR:** 10 commands total
+- **Per repository:** 50 commands/day
+
+## Core Features
+
+- **Multi-Agent Architecture**: 6 specialized agents (Security, Fix Generator, Test Generator, Bug Detector, Language Detector, Optimizer)
+- **LangGraph Orchestration**: Sequential, parallel, and conditional workflow patterns
+- **GitHub Integration**: Seamless webhook-based automation
+- **Stateless Design**: No PostgreSQL/Redis required - file-based state management
+- **Type-Safe**: Full TypedDict state schemas with validation
+- **Comprehensive Testing**: Unit + integration tests with >80% coverage target
 
 ## Architecture
 
@@ -108,32 +137,74 @@ The API will be available at `http://localhost:8000`
 ```
 repoauditor-ai/
 ├── app/
-│   ├── main.py                 # FastAPI application entry point
-│   ├── config.py               # Configuration management
-│   ├── agents/                 # LangGraph agents
-│   │   ├── state.py           # Shared state definitions
-│   │   └── code_reviewer.py   # Code review agent
-│   ├── workflows/             # LangGraph workflows
-│   │   └── code_review_workflow.py
-│   ├── integrations/          # External service clients
+│   ├── main.py                        # FastAPI application entry point
+│   ├── config.py                      # Configuration management
+│   ├── agents/                        # LangGraph agents
+│   │   ├── base_agent.py             # Base agent class
+│   │   ├── state.py                  # Shared state definitions
+│   │   ├── code_reviewer.py          # Code review agent
+│   │   └── specialized/              # NEW: Specialized agents
+│   │       ├── security_scanner.py   # Security vulnerability scanner
+│   │       ├── fix_generator.py      # Fix generation agent
+│   │       ├── test_generator.py     # Test case generator
+│   │       ├── bug_detector.py       # Bug detection agent
+│   │       ├── language_detector.py  # Language detection agent
+│   │       └── optimizer.py          # Code optimizer agent
+│   ├── workflows/                    # LangGraph workflows
+│   │   ├── code_review_workflow.py
+│   │   ├── multi_agent_workflow.py
+│   │   ├── security_fix_workflow.py          # NEW
+│   │   ├── comprehensive_review_workflow.py  # NEW
+│   │   ├── auto_fix_workflow.py              # NEW
+│   │   ├── optimize_workflow.py              # NEW
+│   │   ├── incremental_review_workflow.py    # NEW
+│   │   └── nodes/                            # NEW: Workflow nodes
+│   ├── commands/                    # Command routing
+│   │   ├── router.py               # Command router
+│   │   ├── router_instance.py      # Router singleton
+│   │   └── handlers/               # NEW: Command handlers
+│   │       ├── security_fix_handler.py
+│   │       ├── comprehensive_review_handler.py
+│   │       ├── auto_fix_handler.py
+│   │       ├── optimize_handler.py
+│   │       └── incremental_review_handler.py
+│   ├── models/                     # Pydantic models
+│   │   ├── webhook_events.py
+│   │   └── workflow_states.py     # NEW: State schemas for workflows
+│   ├── integrations/              # External service clients
 │   │   ├── github_client.py
 │   │   ├── gemini_client.py
 │   │   └── jira_client.py
-│   ├── webhooks/              # Webhook handlers
+│   ├── webhooks/                  # Webhook handlers
 │   │   ├── github.py
 │   │   └── signature.py
-│   ├── models/                # Pydantic models
-│   │   └── webhook_events.py
-│   └── utils/                 # Utility functions
+│   └── utils/                     # Utility functions
 │       ├── cache.py
+│       ├── rate_limiter.py       # NEW: File-based rate limiting
+│       ├── decorators.py         # NEW: Rate limit decorator
 │       ├── retry.py
 │       └── logger.py
-├── tests/                     # Test suite
-├── scripts/                   # Utility scripts
-├── Dockerfile                 # Container definition
-├── docker-compose.yml        # Docker orchestration
-└── pyproject.toml            # Project dependencies
+├── data/                          # NEW: Data storage
+│   ├── rate_limits.json          # Rate limit tracking
+│   └── incremental_reviews/      # Per-PR review history
+├── docs/                          # NEW: Documentation
+│   ├── Testing_Github.md         # Setup and testing guide
+│   └── Agent.md                  # Architecture documentation
+├── tests/                         # Test suite
+│   ├── unit/
+│   │   └── test_rate_limiter.py  # NEW
+│   └── integration/
+├── scripts/                       # Utility scripts
+├── Dockerfile                     # Container definition
+├── docker-compose.yml            # Docker orchestration
+└── pyproject.toml                # Project dependencies
 ```
+
+## 📚 Documentation
+
+- **[Testing Guide](docs/Testing_Github.md)** - Complete setup, testing procedures, and troubleshooting
+- **[Architecture Guide](docs/Agent.md)** - LangGraph workflows, state management, and design decisions
+- **README.md** (this file) - Quick start and overview
 
 ## Development
 

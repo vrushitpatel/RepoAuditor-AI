@@ -9,6 +9,15 @@ from app.agents.help_agent import HelpAgent
 from app.agents.explainer_agent_wrapper import ExplainerAgentWrapper
 from app.agents.review_agent_wrapper import ReviewAgentWrapper
 from app.agents.cicd_agent_wrapper import CICDAgentWrapper
+from app.commands.handlers import (
+    FixSecurityHandler,
+    ComprehensiveReviewHandler,
+    AutoFixHandler,
+    OptimizeHandler,
+    IncrementalReviewHandler,
+)
+from app.commands.handlers.jira_handler import JiraHandler
+from app.commands.handlers.jira_all_handler import JiraAllHandler
 from app.integrations.github_client import GitHubClient
 from app.integrations.gemini_client import GeminiClient
 from app.utils.logger import setup_logger
@@ -87,6 +96,57 @@ def initialize_router() -> CommandRouter:
         command="generate-ci",
         agent=CICDAgentWrapper(),
         pattern=r"^/?generate-ci\b",
+    )
+
+    # NEW MULTI-AGENT WORKFLOW COMMANDS
+
+    # Fix security issues command
+    router.register(
+        command="fix-security-issues",
+        agent=FixSecurityHandler(),
+        pattern=r"^/?fix-security-issues\b",
+    )
+
+    # Comprehensive review command
+    router.register(
+        command="comprehensive-review",
+        agent=ComprehensiveReviewHandler(),
+        pattern=r"^/?comprehensive-review\b",
+    )
+
+    # Auto-fix command
+    router.register(
+        command="auto-fix",
+        agent=AutoFixHandler(),
+        pattern=r"^/?auto-fix\b",
+    )
+
+    # Optimize command
+    router.register(
+        command="optimize",
+        agent=OptimizeHandler(),
+        pattern=r"^/?optimize\b",
+    )
+
+    # Incremental review command
+    router.register(
+        command="incremental-review",
+        agent=IncrementalReviewHandler(),
+        pattern=r"^/?incremental-review\b",
+    )
+
+    # JIRA integration command
+    router.register(
+        command="jira",
+        agent=JiraHandler(),
+        pattern=r"^/?jira\b",
+    )
+
+    # JIRA ALL command - Create one ticket with all findings
+    router.register(
+        command="jira-all",
+        agent=JiraAllHandler(),
+        pattern=r"^/?jira-all\b",
     )
 
     logger.info(

@@ -2,7 +2,13 @@
   "permissions": {
     "allow": [
       "Bash(\"P:\\\\[01] AI Application\\\\AI Code Assistant + Reviewer\\\\[02] Source Code\\\\RepoAuditor AI\\\\repoauditor-ai\\\\app\\\\agents\\\\__init__.py\")",
-      "Bash(\"P:\\\\[01] AI Application\\\\AI Code Assistant + Reviewer\\\\[02] Source Code\\\\RepoAuditor AI\\\\repoauditor-ai\\\\app\\\\prompts\\\\__init__.py\")"
+      "Bash(\"P:\\\\[01] AI Application\\\\AI Code Assistant + Reviewer\\\\[02] Source Code\\\\RepoAuditor AI\\\\repoauditor-ai\\\\app\\\\prompts\\\\__init__.py\")",
+      "Bash(pytest:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python verify_implementation.py:*)",
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(del \"P:\\\\[01] AI Application\\\\AI Code Assistant + Reviewer\\\\[02] Source Code\\\\RepoAuditor AI\\\\repoauditor-ai\\\\data\\\\finding_cache\\\\vrushitpatel_RepoAuditor-AI-Test-Repo_pr_3.json\")"
     ]
   }
 }

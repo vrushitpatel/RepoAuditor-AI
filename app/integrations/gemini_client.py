@@ -22,6 +22,7 @@ from app.prompts.code_review_prompts import (
     format_explanation_prompt,
     format_fix_prompt,
     format_general_prompt,
+    format_minimal_prompt,
     format_performance_prompt,
     format_security_prompt,
     get_analysis_prompt,
@@ -144,6 +145,8 @@ class GeminiClient:
             prompt = format_bugs_prompt(code_diff)
         elif analysis_type == "general":
             prompt = format_general_prompt(code_diff)
+        elif analysis_type == "minimal":
+            prompt = format_minimal_prompt(code_diff)
         else:
             raise ValueError(f"Invalid analysis type: {analysis_type}")
 
@@ -508,8 +511,43 @@ class GeminiClient:
         # Remove any trailing commas before } or ]
         json_str = re.sub(r',(\s*[}\]])', r'\1', json_str)
 
-        # Fix unescaped newlines in strings (this is tricky and may not catch all cases)
-        # This is a best-effort attempt
+        # Try to fix unescaped newlines within string values
+        # This attempts to replace actual newlines with escaped newlines (\n)
+        # while preserving newlines between JSON properties
+
+        # First attempt: remove newlines that are clearly inside string values
+        # Look for patterns like: "text\nmore text" (newline in middle of string)
+        lines = json_str.split('\n')
+        fixed_lines = []
+        inside_string = False
+        current_line = ""
+
+        for line in lines:
+            # Count unescaped quotes to determine if we're inside a string
+            quote_count = 0
+            i = 0
+            while i < len(line):
+                if line[i] == '"' and (i == 0 or line[i-1] != '\\'):
+                    quote_count += 1
+                i += 1
+
+            # If we're inside a string from previous line, append without newline
+            if inside_string:
+                current_line += " " + line.strip()
+            else:
+                if current_line:
+                    fixed_lines.append(current_line)
+                current_line = line
+
+            # Update inside_string state
+            if quote_count % 2 == 1:
+                inside_string = not inside_string
+
+        # Don't forget last line
+        if current_line:
+            fixed_lines.append(current_line)
+
+        json_str = '\n'.join(fixed_lines)
 
         return json_str
 

@@ -190,6 +190,60 @@ Return response in JSON format:
     "alternatives": ["alternative1"]
 }}"""
 
+MINIMAL_REVIEW_PROMPT = """Review code changes - FOCUS ONLY ON CRITICAL ISSUES:
+
+**PRIORITY 1 - CRITICAL SECURITY**:
+- SQL Injection, XSS, Command Injection
+- Hardcoded secrets (passwords, API keys, tokens)
+- Insecure eval()/exec()
+- Path traversal vulnerabilities
+
+**PRIORITY 2 - HIGH SEVERITY BUGS**:
+- Null pointer errors that will crash
+- Infinite loops
+- Data loss scenarios
+
+Code Diff:
+{code_diff}
+
+**RESPONSE RULES**:
+- Report ONLY CRITICAL and HIGH severity issues
+- Skip medium/low severity issues
+- Keep descriptions concise (1-2 sentences max)
+- Provide only essential fix examples
+
+**CRITICAL JSON FORMATTING RULES - YOU MUST FOLLOW THESE EXACTLY**:
+1. Return ONLY valid JSON - no markdown code blocks, no extra text
+2. All string values MUST be on a SINGLE LINE - NO line breaks inside strings
+3. Use escaped newlines (\\n) for code examples, NOT actual newlines
+4. Keep descriptions brief (max 100 characters)
+5. Keep example_fix brief (max 200 characters) or use empty string if too long
+
+**REQUIRED JSON FORMAT**:
+{{
+    "findings": [
+        {{
+            "severity": "CRITICAL",
+            "type": "security",
+            "title": "Brief title",
+            "description": "Single line description, no line breaks",
+            "location": {{
+                "file_path": "file.py",
+                "line_start": 5,
+                "code_snippet": "problematic code on single line"
+            }},
+            "recommendation": "Single line recommendation",
+            "example_fix": "use query=?, params=(val,)",
+            "references": []
+        }}
+    ],
+    "summary": "Brief summary on single line"
+}}
+
+If no CRITICAL/HIGH issues: {{"findings": [], "summary": "No critical issues found"}}
+
+Return ONLY the JSON object. Do NOT wrap in ```json```. Start with {{ and end with }}."""
+
 GENERAL_REVIEW_PROMPT = """Review the following code changes comprehensively:
 
 Analyze for:
@@ -253,6 +307,7 @@ PROMPTS: Dict[str, str] = {
     "explanation": EXPLANATION_PROMPT,
     "fix": FIX_SUGGESTION_PROMPT,
     "general": GENERAL_REVIEW_PROMPT,
+    "minimal": MINIMAL_REVIEW_PROMPT,
 }
 
 
@@ -312,3 +367,8 @@ def format_fix_prompt(issue_description: str, code_context: str) -> str:
 def format_general_prompt(code_diff: str) -> str:
     """Format general review prompt."""
     return GENERAL_REVIEW_PROMPT.format(code_diff=code_diff)
+
+
+def format_minimal_prompt(code_diff: str) -> str:
+    """Format minimal review prompt (CRITICAL/HIGH only)."""
+    return MINIMAL_REVIEW_PROMPT.format(code_diff=code_diff)

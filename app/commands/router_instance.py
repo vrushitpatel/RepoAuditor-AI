@@ -16,6 +16,8 @@ from app.commands.handlers import (
     OptimizeHandler,
     IncrementalReviewHandler,
 )
+from app.commands.handlers.jira_handler import JiraHandler
+from app.commands.handlers.jira_all_handler import JiraAllHandler
 from app.integrations.github_client import GitHubClient
 from app.integrations.gemini_client import GeminiClient
 from app.utils.logger import setup_logger
@@ -131,6 +133,20 @@ def initialize_router() -> CommandRouter:
         command="incremental-review",
         agent=IncrementalReviewHandler(),
         pattern=r"^/?incremental-review\b",
+    )
+
+    # JIRA integration command
+    router.register(
+        command="jira",
+        agent=JiraHandler(),
+        pattern=r"^/?jira\b",
+    )
+
+    # JIRA ALL command - Create one ticket with all findings
+    router.register(
+        command="jira-all",
+        agent=JiraAllHandler(),
+        pattern=r"^/?jira-all\b",
     )
 
     logger.info(

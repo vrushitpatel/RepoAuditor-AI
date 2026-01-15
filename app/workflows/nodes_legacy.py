@@ -199,10 +199,10 @@ async def review_code_node(state: WorkflowState) -> WorkflowState:
         # Initialize Gemini client (use Flash model for cost efficiency)
         gemini_client = GeminiClient(use_flash=True)
 
-        # Run comprehensive code analysis
+        # Run minimal code analysis (CRITICAL/HIGH issues only for token efficiency)
         analysis = await gemini_client.analyze_code(
             code_diff=diff,
-            analysis_type="general"  # Comprehensive review
+            analysis_type="minimal"  # Focuses only on CRITICAL/HIGH severity issues
         )
 
         # Add findings to state
@@ -315,6 +315,125 @@ def classify_severity_node(state: WorkflowState) -> WorkflowState:
 
 
 # ============================================================================
+# Helper: auto_create_jira_tickets - Automatically Create JIRA Tickets
+# ============================================================================
+
+async def auto_create_jira_tickets(state: WorkflowState) -> None:
+    """
+    Automatically create JIRA tickets for CRITICAL/HIGH findings.
+
+    This function is called after posting the review to automatically create
+    JIRA tickets for critical and high severity issues if the feature is enabled.
+
+    Args:
+        state: Workflow state with findings
+    """
+    from app.config import get_settings
+    from app.integrations.jira_client import JIRAClient, JIRAError
+    from app.models.jira_models import JIRAConfig
+    from app.utils.finding_cache import get_finding_cache
+
+    settings = get_settings()
+
+    # Check if auto-create is enabled
+    if not settings.jira.auto_create_tickets:
+        logger.info("Auto JIRA ticket creation disabled")
+        return
+
+    # Check if JIRA is configured
+    if not settings.jira.enabled:
+        logger.warning("JIRA not configured, skipping auto-ticket creation")
+        return
+
+    # Check if default project is configured
+    if not settings.jira.default_project_key:
+        logger.warning("No default JIRA project configured, skipping auto-ticket creation")
+        return
+
+    try:
+        # Get findings from cache
+        pr_data = state.get("pr_data", {})
+        repo_name = pr_data.get("repo_name")
+        pr_number = pr_data.get("pr_number")
+
+        if not repo_name or not pr_number:
+            logger.warning("Missing repo/PR info for JIRA ticket creation")
+            return
+
+        cache = get_finding_cache()
+        findings = cache.get_findings(repo_name, pr_number)
+
+        if not findings:
+            logger.info("No cached findings for JIRA ticket creation")
+            return
+
+        # Filter for CRITICAL/HIGH only
+        critical_findings = [
+            f for f in findings
+            if f.severity in ["CRITICAL", "HIGH"]
+        ]
+
+        if not critical_findings:
+            logger.info("No CRITICAL/HIGH findings to create tickets for")
+            return
+
+        logger.info(f"Creating JIRA tickets for {len(critical_findings)} CRITICAL/HIGH findings")
+
+        # Create JIRA config
+        jira_config = JIRAConfig(
+            base_url=settings.jira.base_url,
+            email=settings.jira.email,
+            api_token=settings.jira.api_token,
+        )
+
+        # Create PR URL
+        pr_url = f"https://github.com/{repo_name}/pull/{pr_number}"
+
+        created_tickets = []
+
+        # Create tickets
+        async with JIRAClient(jira_config) as jira:
+            for idx, finding in enumerate(critical_findings, start=1):
+                try:
+                    issue = await jira.create_issue_from_finding(
+                        project_key=settings.jira.default_project_key,
+                        finding=finding,
+                        pr_url=pr_url,
+                        repo_name=repo_name,
+                    )
+                    created_tickets.append((idx, issue))
+                    logger.info(f"Created JIRA ticket {issue.key} for finding #{idx}")
+                except JIRAError as e:
+                    logger.error(f"Failed to create ticket for finding #{idx}: {e.message}")
+
+        # Post summary comment if tickets were created
+        if created_tickets:
+            github_client = GitHubClient()
+            installation_id = pr_data.get("installation_id")
+
+            comment = "## 🎟️ JIRA Tickets Auto-Created\n\n"
+            comment += f"Automatically created {len(created_tickets)} JIRA ticket(s) for CRITICAL/HIGH findings:\n\n"
+
+            for finding_id, issue in created_tickets:
+                comment += f"- **#{finding_id}**: [{issue.key}]({issue.url})\n"
+
+            comment += "\n*Tickets created automatically by RepoAuditor AI*"
+
+            github_client.post_pr_comment(
+                repo_name=repo_name,
+                pr_number=pr_number,
+                body=comment,
+                installation_id=installation_id
+            )
+
+            logger.info(f"Posted JIRA ticket summary comment")
+
+    except Exception as e:
+        logger.error(f"Error in auto JIRA ticket creation: {e}", exc_info=True)
+        # Don't fail the review if JIRA creation fails
+
+
+# ============================================================================
 # Node: post_review - Post Results to GitHub PR
 # ============================================================================
 
@@ -390,6 +509,9 @@ async def post_review_node(state: WorkflowState) -> WorkflowState:
         state = update_state(state, current_step="review_posted")
 
         logger.info(f"Review posted successfully")
+
+        # Auto-create JIRA tickets if enabled and critical/high issues found
+        await auto_create_jira_tickets(state)
 
         return state
 
@@ -557,7 +679,13 @@ def end_node(state: WorkflowState) -> WorkflowState:
 
 def generate_review_comment(state: WorkflowState) -> str:
     """
-    Generate formatted Markdown review comment.
+    Generate formatted Markdown review comment with finding IDs.
+
+    Uses enhanced ReviewCommentFormatter for professional formatting with:
+    - Finding IDs (#1, #2, #3...)
+    - Action buttons for JIRA, explain, etc.
+    - Severity-based templates
+    - Code snippets and collapsible details
 
     Args:
         state: Workflow state with findings
@@ -565,101 +693,65 @@ def generate_review_comment(state: WorkflowState) -> str:
     Returns:
         Formatted Markdown comment
     """
+    from app.utils.finding_cache import get_finding_cache
+    from app.utils.comment_formatter import ReviewCommentFormatter
+    from app.models.review_findings import Finding, CodeLocation
+
     findings = state["review_results"]
     metadata = state["metadata"]
     severity_counts = metadata.get("severity_counts", {})
 
-    # Header
-    comment = "# 🤖 RepoAuditor AI - Code Review\n\n"
+    # Get pr_data once at the beginning
+    pr_data = state.get("pr_data", {})
 
-    # Summary
-    total = len(findings)
-    if total == 0:
-        comment += "✅ **No issues found!** Great job!\n\n"
-        comment += "The code looks clean and follows best practices.\n\n"
-    else:
-        comment += f"**Found {total} issue{'s' if total != 1 else ''}:**\n\n"
+    # Cache findings for /jira command
+    # Convert to Finding objects
+    finding_objects = []
+    for finding_dict in findings:
+        location = None
+        if finding_dict.get("file_path"):
+            location = CodeLocation(
+                file_path=finding_dict["file_path"],
+                line_start=finding_dict.get("line_start"),
+                line_end=finding_dict.get("line_end"),
+                code_snippet=finding_dict.get("code_snippet"),
+            )
 
-        if severity_counts.get("CRITICAL", 0) > 0:
-            comment += f"- ⛔ **{severity_counts['CRITICAL']} Critical**\n"
-        if severity_counts.get("HIGH", 0) > 0:
-            comment += f"- 🔴 **{severity_counts['HIGH']} High**\n"
-        if severity_counts.get("MEDIUM", 0) > 0:
-            comment += f"- 🟡 **{severity_counts['MEDIUM']} Medium**\n"
-        if severity_counts.get("LOW", 0) > 0:
-            comment += f"- 🔵 **{severity_counts['LOW']} Low**\n"
-        if severity_counts.get("INFO", 0) > 0:
-            comment += f"- ℹ️ **{severity_counts['INFO']} Info**\n"
+        finding = Finding(
+            type=finding_dict.get("type", "Unknown"),
+            severity=finding_dict.get("severity", "INFO"),
+            title=finding_dict.get("title", "Issue"),
+            description=finding_dict.get("description", ""),
+            recommendation=finding_dict.get("recommendation", ""),
+            location=location,
+            example_fix=finding_dict.get("example_fix"),
+        )
+        finding_objects.append(finding)
 
-        comment += "\n---\n\n"
+    # Cache findings
+    if finding_objects:
+        cache = get_finding_cache()
+        cache.save_findings(
+            repo_name=pr_data.get("repo_name", "unknown"),
+            pr_number=pr_data.get("pr_number", 0),
+            findings=finding_objects,
+        )
+        logger.info(f"Cached {len(finding_objects)} findings for /jira command")
 
-        # Detailed findings
-        comment += "## 📋 Detailed Findings\n\n"
+    # Enhanced metadata for formatter
+    enhanced_metadata = {
+        **metadata,
+        "files_analyzed": len(state['pr_data'].get('files', [])),
+    }
 
-        # Group by severity
-        for severity in ["CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"]:
-            severity_findings = [f for f in findings if f.get("severity") == severity]
-
-            if not severity_findings:
-                continue
-
-            emoji = {
-                "CRITICAL": "⛔",
-                "HIGH": "🔴",
-                "MEDIUM": "🟡",
-                "LOW": "🔵",
-                "INFO": "ℹ️"
-            }[severity]
-
-            comment += f"### {emoji} {severity} Severity\n\n"
-
-            for i, finding in enumerate(severity_findings, 1):
-                comment += f"#### {i}. {finding['title']}\n\n"
-                comment += f"**Type:** {finding['type']}\n\n"
-
-                if finding.get("file_path"):
-                    location = f"`{finding['file_path']}"
-                    if finding.get("line_start"):
-                        location += f":{finding['line_start']}"
-                        if finding.get("line_end") and finding['line_end'] != finding['line_start']:
-                            location += f"-{finding['line_end']}"
-                    location += "`"
-                    comment += f"**Location:** {location}\n\n"
-
-                comment += f"{finding['description']}\n\n"
-
-                if finding.get("code_snippet"):
-                    comment += "**Code:**\n```\n"
-                    comment += finding['code_snippet']
-                    comment += "\n```\n\n"
-
-                if finding.get("recommendation"):
-                    comment += f"**💡 Recommendation:** {finding['recommendation']}\n\n"
-
-                if finding.get("example_fix"):
-                    comment += "**✅ Example Fix:**\n```\n"
-                    comment += finding['example_fix']
-                    comment += "\n```\n\n"
-
-                if finding.get("references"):
-                    comment += "**📚 References:**\n"
-                    for ref in finding['references']:
-                        comment += f"- {ref}\n"
-                    comment += "\n"
-
-                comment += "---\n\n"
-
-    # Footer with metadata
-    comment += "\n---\n\n"
-    comment += "<details>\n<summary>📊 Analysis Metadata</summary>\n\n"
-    comment += f"- **Model:** {metadata.get('model_name', 'Unknown')}\n"
-    comment += f"- **Tokens Used:** {metadata.get('total_tokens', 0):,}\n"
-    comment += f"- **Cost:** ${metadata.get('total_cost_usd', 0):.4f}\n"
-    comment += f"- **Analysis Time:** {metadata.get('workflow_duration_seconds', 0):.2f}s\n"
-    comment += f"- **Files Analyzed:** {len(state['pr_data'].get('files', []))}\n"
-    comment += "\n</details>\n\n"
-
-    comment += "*Powered by RepoAuditor AI with Google Gemini 2.0*\n"
+    # Use enhanced comment formatter
+    comment = ReviewCommentFormatter.format_review_comment(
+        findings=findings,
+        severity_counts=severity_counts,
+        metadata=enhanced_metadata,
+        repo_name=pr_data.get("repo_name", ""),
+        pr_number=pr_data.get("pr_number", 0),
+    )
 
     return comment
 

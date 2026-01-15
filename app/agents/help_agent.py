@@ -97,24 +97,6 @@ I'm your AI code review assistant with advanced LangGraph multi-agent workflows!
 - 📊 Aggregated report with severity breakdown
 - 🎫 Optional Jira ticket creation
 
-**`/auto-fix`** - Automated bug detection and fixing
-- 🐛 Detects bugs using pattern matching + AI
-- 🔧 Generates fixes for each bug
-- 🧪 Generates test cases for fixes
-- 📝 Creates PR with fixes AND tests
-
-**`/optimize`** - Code optimization workflow
-- 🌐 Detects primary language
-- 💄 Applies formatter (black, prettier, etc.)
-- 🔍 Applies linter (ruff, eslint, etc.)
-- ✅ Runs tests
-- ⏪ Rolls back if tests fail
-
-**`/incremental-review`** - Smart incremental reviews
-- 💾 Tracks previously reviewed files
-- 🆕 Only reviews new/changed files
-- 📝 Remembers previous feedback
-- ⚡ Faster reviews on subsequent commits
 
 ---
 
@@ -165,3 +147,22 @@ To ensure fair usage:
 
 *Powered by LangGraph + Google Gemini AI 🤖*
 """
+
+# **`/auto-fix`** - Automated bug detection and fixing
+# - 🐛 Detects bugs using pattern matching + AI
+# - 🔧 Generates fixes for each bug
+# - 🧪 Generates test cases for fixes
+# - 📝 Creates PR with fixes AND tests
+
+# **`/optimize`** - Code optimization workflow
+# - 🌐 Detects primary language
+# - 💄 Applies formatter (black, prettier, etc.)
+# - 🔍 Applies linter (ruff, eslint, etc.)
+# - ✅ Runs tests
+# - ⏪ Rolls back if tests fail
+
+# **`/incremental-review`** - Smart incremental reviews
+# - 💾 Tracks previously reviewed files
+# - 🆕 Only reviews new/changed files
+# - 📝 Remembers previous feedback
+# - ⚡ Faster reviews on subsequent commits

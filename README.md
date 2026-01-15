@@ -14,19 +14,22 @@ An advanced AI-powered code review system with LangGraph multi-agent orchestrati
 ## 🤖 Available Commands
 
 ### Basic Commands
+
 - **`/explain`** - Explain PR changes (entire PR, specific file, or function)
 - **`/review`** - Comprehensive code review with severity levels
 - **`/generate-ci`** - Auto-generate GitHub Actions workflows
 - **`/help`** - Display all available commands
 
 ### Multi-Agent Workflows (LangGraph)
+
 - **`/fix-security-issues`** - Scan → Fix → Test → Create PR workflow
 - **`/comprehensive-review`** - Parallel security/performance/quality analysis
-- **`/auto-fix`** - Detect bugs → Generate fixes + tests → Create PR
+<!-- - **`/auto-fix`** - Detect bugs → Generate fixes + tests → Create PR
 - **`/optimize`** - Auto-format/lint with rollback on test failure
-- **`/incremental-review`** - Smart file tracking across commits
+- **`/incremental-review`** - Smart file tracking across commits -->
 
 ### Rate Limits
+
 - **Per user:** 5 commands/hour
 - **Per PR:** 10 commands total
 - **Per repository:** 50 commands/day
@@ -252,11 +255,13 @@ All configuration is managed through environment variables. See `.env.example` f
 ### Docker Deployment
 
 1. Build the image:
+
 ```bash
 docker build -t repoauditor-ai .
 ```
 
 2. Run the container:
+
 ```bash
 docker run -p 8000:8000 --env-file .env repoauditor-ai
 ```
@@ -272,6 +277,7 @@ docker run -p 8000:8000 --env-file .env repoauditor-ai
 ## API Documentation
 
 Once running, visit:
+
 - Swagger UI: `http://localhost:8000/docs`
 - ReDoc: `http://localhost:8000/redoc`
 
@@ -290,6 +296,7 @@ MIT License - see LICENSE file for details
 ## Support
 
 For issues and questions:
+
 - GitHub Issues: [Report bugs or request features]
 - Documentation: See `Guide.md` for detailed setup instructions
 

@@ -38,6 +38,13 @@ class FixSecurityHandler(BaseAgent):
                 installation_id=context.installation_id,
             )
 
+            # Fetch PR diff separately (get_pr_details doesn't include the unified diff)
+            pr_diff = context.github_client.get_pr_diff(
+                repo_name=context.repo_name,
+                pr_number=context.pr_number,
+                installation_id=context.installation_id,
+            )
+
             # Create initial state
             initial_state = create_security_fix_state(
                 repo_name=context.repo_name,
@@ -47,7 +54,7 @@ class FixSecurityHandler(BaseAgent):
                 gemini_client=context.gemini_client,
                 command={"name": context.command, "commenter": context.commenter},
                 pr_data={
-                    "diff": pr_details.get("diff", ""),
+                    "diff": pr_diff,  # Use the fetched diff
                     "files": pr_details.get("files", []),
                 },
             )

@@ -71,23 +71,28 @@ class SecurityScanner:
         Returns:
             List of SecurityIssue dictionaries
         """
-        logger.info(f"Starting security scan for {language} code")
+        logger.info(f"Starting security scan for {language} code (code length: {len(code)})")
 
         issues = []
 
         # Pattern-based detection
         pattern_issues = self._scan_with_patterns(code, language)
+        logger.info(f"Pattern-based scan found {len(pattern_issues)} issues")
         issues.extend(pattern_issues)
 
         # AI-powered detection (if available)
         if self.gemini_client:
+            logger.info("GeminiClient available, running AI-powered scan...")
             ai_issues = await self._scan_with_ai(code, language, context)
+            logger.info(f"AI-powered scan found {len(ai_issues)} issues")
             issues.extend(ai_issues)
+        else:
+            logger.warning("No GeminiClient available, skipping AI-powered scan")
 
         # Deduplicate issues
         issues = self._deduplicate_issues(issues)
 
-        logger.info(f"Security scan complete: {len(issues)} issues found")
+        logger.info(f"Security scan complete: {len(issues)} total issues after deduplication")
 
         return issues
 
@@ -128,36 +133,38 @@ class SecurityScanner:
         language: str,
         context: Optional[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
-        """Scan code using AI analysis via GeminiClient."""
+        """Scan code using AI analysis via GeminiClient.
+
+        Uses the same 'minimal' analysis type as the /review command
+        to find CRITICAL and HIGH severity security issues.
+        """
         if not self.gemini_client:
             return []
 
         try:
-            # Use the existing analyze_code method from GeminiClient
-            # This is the same method used by the /review command
+            # Use the same analysis_type="minimal" as /review command
+            # This focuses on CRITICAL/HIGH security issues
             analysis = await self.gemini_client.analyze_code(
                 code_diff=code,
-                analysis_type="security"  # Focus on security
+                analysis_type="minimal"  # Same as /review command
             )
 
-            # Convert findings to our security issue format
+            # Convert ALL findings to our security issue format
+            # Don't filter by type - include all findings from AI
             ai_issues = []
             for finding in analysis.findings:
-                # Only include security-related findings
-                if finding.type.lower() in ['security', 'vulnerability', 'sql_injection',
-                                            'xss', 'injection', 'hardcoded_secret']:
-                    issue = {
-                        "id": f"ai_{finding.type}_{finding.location.line_start if finding.location else 0}",
-                        "severity": finding.severity,
-                        "type": finding.type,
-                        "file": finding.location.file_path if finding.location else "unknown",
-                        "line": finding.location.line_start if finding.location else 0,
-                        "description": finding.description,
-                        "confidence": 0.9,  # AI-powered = high confidence
-                        "recommendation": finding.recommendation,
-                        "cwe_id": None,  # Would need mapping
-                    }
-                    ai_issues.append(issue)
+                issue = {
+                    "id": f"ai_{finding.type}_{finding.location.line_start if finding.location else 0}",
+                    "severity": finding.severity,
+                    "type": finding.type,
+                    "file": finding.location.file_path if finding.location else "unknown",
+                    "line": finding.location.line_start if finding.location else 0,
+                    "description": finding.description,
+                    "confidence": 0.9,  # AI-powered = high confidence
+                    "recommendation": finding.recommendation,
+                    "cwe_id": None,  # Would need mapping
+                }
+                ai_issues.append(issue)
 
             logger.info(f"AI analysis found {len(ai_issues)} security issues")
             return ai_issues

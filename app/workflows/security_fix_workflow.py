@@ -14,6 +14,7 @@ from langgraph.graph import StateGraph, END
 
 from app.models.workflow_states import SecurityFixState
 from app.agents.specialized import SecurityScanner, FixGenerator
+from app.integrations.gemini_client import GeminiClient
 from app.utils.logger import setup_logger
 from app.utils.decorators import rate_limited, log_execution
 
@@ -36,11 +37,25 @@ async def scan_security_issues_node(state: SecurityFixState) -> SecurityFixState
         pr_data = state["pr_data"]
         diff = pr_data.get("diff", "")
 
-        # Initialize scanner
-        scanner = SecurityScanner(state.get("gemini_client"))
+        logger.info(f"PR diff length: {len(diff)} characters")
+        if not diff:
+            logger.warning("PR diff is empty!")
+
+        # Initialize Gemini client for AI-powered analysis
+        gemini_client = state.get("gemini_client")
+        if not gemini_client:
+            logger.info("Creating new GeminiClient for security scan")
+            gemini_client = GeminiClient(use_flash=True)
+        else:
+            logger.info("Using existing GeminiClient from state")
+
+        # Initialize scanner with AI client
+        scanner = SecurityScanner(gemini_client)
 
         # Scan for issues
+        logger.info("Starting security scan...")
         issues = await scanner.scan(diff, language="python")
+        logger.info(f"Security scan found {len(issues)} issues")
 
         # Update state
         return {

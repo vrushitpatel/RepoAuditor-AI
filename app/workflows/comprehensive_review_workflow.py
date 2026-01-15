@@ -6,6 +6,7 @@ This workflow runs parallel security, performance, and quality analysis.
 from langgraph.graph import StateGraph, END
 from app.models.workflow_states import ComprehensiveReviewState
 from app.agents.specialized import SecurityScanner
+from app.integrations.gemini_client import GeminiClient
 from app.utils.logger import setup_logger
 from app.utils.decorators import rate_limited, log_execution
 
@@ -30,7 +31,12 @@ async def security_scan_node(state: ComprehensiveReviewState) -> ComprehensiveRe
     logger.info("Running security analysis")
 
     try:
-        scanner = SecurityScanner(state.get("gemini_client"))
+        # Initialize Gemini client for AI-powered analysis
+        gemini_client = state.get("gemini_client")
+        if not gemini_client:
+            gemini_client = GeminiClient(use_flash=True)
+
+        scanner = SecurityScanner(gemini_client)
         diff = state["pr_data"].get("diff", "")
         issues = await scanner.scan(diff)
 
